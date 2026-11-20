@@ -1,1 +1,154 @@
 
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#173D2A">
+
+  <title>RETO CAFETERO | Cooperativa de Caficultores de Santander</title>
+
+  <meta name="description" content="Plataforma de retos y conocimientos de la Cooperativa de Caficultores de Santander.">
+
+  <link rel="stylesheet" href="style.css">
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+
+  <div id="app">
+
+    <header class="encabezado">
+      <div class="marca">
+        <span class="marca-icono">☕</span>
+        <div>
+          <h1>RETO CAFETERO</h1>
+          <p>Cooperativa de Caficultores de Santander</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="contenedor">
+
+      <section id="pantalla-inicio" class="pantalla">
+        <div class="bienvenida">
+          <span class="etiqueta">APRENDE · PARTICIPA · GANA</span>
+
+          <h2>¡Bienvenido al<br>RETO CAFETERO!</h2>
+
+          <p>
+            Pon a prueba tus conocimientos,
+            demuestra tu agilidad y descubre
+            cuánto sabes de nuestra Cooperativa.
+          </p>
+
+          <button id="btn-comenzar" class="btn-principal">
+            COMENZAR
+          </button>
+        </div>
+      </section>
+
+      <section id="pantalla-registro" class="pantalla oculto">
+        <h2>Registro de participante</h2>
+
+        <p>Ingresa tus datos para participar.</p>
+
+        <form id="form-registro">
+
+          <label for="nombre">Nombre completo</label>
+          <input
+            type="text"
+            id="nombre"
+            placeholder="Escribe tu nombre"
+            required
+          >
+
+          <label for="documento">Número de documento</label>
+          <input
+            type="text"
+            id="documento"
+            placeholder="Número de documento"
+            required
+          >
+
+          <label for="punto">Área o punto de compra</label>
+          <input
+            type="text"
+            id="punto"
+            placeholder="Escribe tu área o punto"
+            required
+          >
+
+          <button type="submit" class="btn-principal">
+            REGISTRARME
+          </button>
+
+        </form>
+      </section>
+
+      <section id="pantalla-semanas" class="pantalla oculto">
+        <h2>Selecciona tu semana</h2>
+        <p>Elige el desafío que deseas realizar.</p>
+
+        <div id="lista-semanas" class="lista-semanas"></div>
+      </section>
+
+      <section id="pantalla-dinamicas" class="pantalla oculto">
+        <h2>Selecciona tu reto</h2>
+        <div id="lista-dinamicas"></div>
+      </section>
+
+      <section id="pantalla-juego" class="pantalla oculto">
+
+        <div class="informacion-juego">
+          <span id="numero-pregunta">Pregunta 1</span>
+          <span id="cronometro">20</span>
+          <span id="puntos">0 puntos</span>
+        </div>
+
+        <div class="progreso">
+          <div id="barra-progreso"></div>
+        </div>
+
+        <h2 id="enunciado-pregunta">
+          Cargando pregunta...
+        </h2>
+
+        <div id="opciones-respuesta"></div>
+
+        <p id="mensaje-respuesta"></p>
+
+      </section>
+
+      <section id="pantalla-resultados" class="pantalla oculto">
+        <div class="resultado-final">
+          <span class="trofeo">🏆</span>
+          <h2>¡Reto completado!</h2>
+
+          <p>Tu puntuación final es:</p>
+
+          <strong id="puntuacion-final">0</strong>
+
+          <p id="detalle-puntuacion"></p>
+
+          <button id="btn-continuar" class="btn-principal">
+            CONTINUAR
+          </button>
+        </div>
+      </section>
+
+    </main>
+
+    <footer>
+      <p>Cooperativa de Caficultores de Santander</p>
+      <p>RETO CAFETERO © 2026</p>
+    </footer>
+
+  </div>
+
+  <script src="app.js"></script>
+
+</body>
+</html>
+
