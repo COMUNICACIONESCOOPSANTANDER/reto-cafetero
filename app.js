@@ -1,16 +1,12 @@
 
 // ============================================
 // RETO CAFETERO - COOPERATIVA DE CAFICULTORES
-// Aplicación conectada a Supabase
 // ============================================
 
 const SUPABASE_URL = "https://voqdqsoxlqwplhfjchrz.supabase.co";
 const SUPABASE_KEY = "sb_publishable_NgaynrOUy74BRpZF-6x5kw_HkjhehPz";
 
-const db = window.supabase.createClient(
-  SUPABASE_URL,
-  SUPABASE_KEY
-);
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // VARIABLES
 let participanteId = null;
@@ -64,13 +60,11 @@ $("form-registro").addEventListener("submit", async e => {
   boton.textContent = "REGISTRANDO...";
 
   try {
-    // Iniciar sesión anónima
     const { error: authError } =
       await db.auth.signInAnonymously();
 
     if (authError) throw authError;
 
-    // Registrar mediante la función SQL
     const { data, error } = await db.rpc(
       "register_participant",
       { p_name: nombre }
@@ -110,10 +104,8 @@ async function cargarSemanas() {
 
     data.forEach(semana => {
       const boton = document.createElement("button");
-
       boton.className = "btn-principal";
-      boton.textContent =
-        semana.title || `Semana ${semana.id}`;
+      boton.textContent = semana.title || `Semana ${semana.id}`;
 
       boton.addEventListener("click", () => {
         cargarDinamicas(semana.id);
@@ -125,7 +117,7 @@ async function cargarSemanas() {
     mostrar("pantalla-semanas");
 
   } catch (error) {
-    console.error(error);
+    console.error("Error al cargar semanas:", error);
     mensaje("No se pudieron cargar las semanas: " + error.message);
   }
 }
@@ -150,10 +142,8 @@ async function cargarDinamicas(semanaId) {
 
     data.forEach(dinamica => {
       const boton = document.createElement("button");
-
       boton.className = "btn-principal";
-      boton.textContent =
-        dinamica.title || `Reto ${dinamica.number}`;
+      boton.textContent = dinamica.title || `Reto ${dinamica.number}`;
 
       boton.addEventListener("click", () => {
         iniciarReto(dinamica);
@@ -169,7 +159,7 @@ async function cargarDinamicas(semanaId) {
     mostrar("pantalla-dinamicas");
 
   } catch (error) {
-    console.error(error);
+    console.error("Error al cargar dinámicas:", error);
     mensaje("No se pudieron cargar los retos: " + error.message);
   }
 }
@@ -182,13 +172,14 @@ async function iniciarReto(dinamica) {
   dinamicaActual = dinamica;
   preguntaActual = 0;
   puntosTotales = 0;
+  respondiendo = false;
 
   try {
+    // CONSULTAR LA TABLA CORRECTA
     const { data, error } = await db
-      .from("questions")
+      .from("game_questions")
       .select("*")
       .eq("dynamic_id", dinamica.id)
-      .eq("is_active", true)
       .order("number");
 
     if (error) throw error;
@@ -199,7 +190,15 @@ async function iniciarReto(dinamica) {
 
     preguntas = data;
 
-    // Crear intento
+    // Verificar que las preguntas tengan respuesta correcta
+    if (preguntas.some(p => !p.correct_answer)) {
+      return mensaje(
+        "Las preguntas no están entregando la respuesta correcta. " +
+        "Debemos revisar la configuración de game_questions en Supabase."
+      );
+    }
+
+    // CREAR INTENTO
     const { data: intento, error: errorIntento } =
       await db.from("attempts")
         .insert({
@@ -219,7 +218,7 @@ async function iniciarReto(dinamica) {
     mostrarPregunta();
 
   } catch (error) {
-    console.error(error);
+    console.error("Error al iniciar reto:", error);
     mensaje("No se pudo iniciar el reto: " + error.message);
   }
 }
@@ -267,9 +266,12 @@ function mostrarPregunta() {
     }
   }
 
+  if (!Array.isArray(respuestas)) {
+    respuestas = [];
+  }
+
   respuestas.forEach(opcion => {
     const boton = document.createElement("button");
-
     boton.className = "btn-principal";
     boton.textContent = opcion;
 
@@ -282,7 +284,6 @@ function mostrarPregunta() {
 
   temporizador = setInterval(() => {
     segundos--;
-
     $("cronometro").textContent = segundos;
 
     if (segundos <= 0) {
@@ -343,12 +344,9 @@ async function responder(respuesta) {
     ? `¡Correcto! +${puntos} puntos`
     : "Respuesta incorrecta.";
 
-  const botones =
-    $("opciones-respuesta").querySelectorAll("button");
-
-  botones.forEach(boton => {
-    boton.disabled = true;
-  });
+  $("opciones-respuesta")
+    .querySelectorAll("button")
+    .forEach(boton => boton.disabled = true);
 
   try {
     const { error } = await db
@@ -369,7 +367,7 @@ async function responder(respuesta) {
     }, 1200);
 
   } catch (error) {
-    console.error(error);
+    console.error("Error al guardar respuesta:", error);
     mensaje("No se pudo guardar la respuesta: " + error.message);
     respondiendo = false;
   }
@@ -400,10 +398,12 @@ async function finalizarReto() {
     $("detalle-puntuacion").textContent =
       "Has terminado todas las preguntas de este reto.";
 
+    $("barra-progreso").style.width = "100%";
+
     mostrar("pantalla-resultados");
 
   } catch (error) {
-    console.error(error);
+    console.error("Error al finalizar:", error);
     mensaje("No se pudieron guardar los resultados: " + error.message);
   }
 }
@@ -419,7 +419,7 @@ $("btn-continuar").addEventListener("click", () => {
 });
 
 // ============================================
-// FIN DE LA APLICACIÓN
+// FIN
 // ============================================
 
 console.log("RETO CAFETERO conectado a Supabase.");
