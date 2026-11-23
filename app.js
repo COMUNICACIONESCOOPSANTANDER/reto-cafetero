@@ -9,10 +9,6 @@ const SUPABASE_KEY = "sb_publishable_NgaynrOUy74BRpZF-6x5kw_HkjhehPz";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ============================================
-// VARIABLES GENERALES
-// ============================================
-
 let participanteId = null;
 let dinamicaActual = null;
 let preguntas = [];
@@ -28,16 +24,9 @@ let semanasDisponibles = [];
 
 const $ = id => document.getElementById(id);
 
-// Escuchar eventos sin detener la aplicación
-// si algún elemento no existe en el HTML.
-function escuchar(id, evento, funcion) {
-  const elemento = $(id);
-  if (elemento) elemento.addEventListener(evento, funcion);
-}
-
-// ============================================
+// --------------------------------------------
 // PANTALLAS Y MENSAJES
-// ============================================
+// --------------------------------------------
 
 function mostrar(pantalla) {
   document.querySelectorAll(".pantalla").forEach(p => {
@@ -45,12 +34,7 @@ function mostrar(pantalla) {
   });
 
   const destino = $(pantalla);
-
-  if (destino) {
-    destino.classList.remove("oculto");
-  } else {
-    console.error("No existe la pantalla:", pantalla);
-  }
+  if (destino) destino.classList.remove("oculto");
 }
 
 function mensaje(texto) {
@@ -59,22 +43,21 @@ function mensaje(texto) {
 
 function establecerCarga(formulario, cargando, texto) {
   const boton = formulario.querySelector('button[type="submit"]');
-
   if (!boton) return;
 
+  boton.disabled = cargando;
+
   if (cargando) {
-    boton.disabled = true;
     boton.dataset.textoOriginal = boton.textContent;
     boton.textContent = texto;
   } else {
-    boton.disabled = false;
     boton.textContent = boton.dataset.textoOriginal || "ENVIAR";
   }
 }
 
-// ============================================
+// --------------------------------------------
 // USUARIO Y AUTENTICACIÓN
-// ============================================
+// --------------------------------------------
 
 function crearCorreoInterno(usuario) {
   return `${usuario.toLowerCase().trim()}@reto-cafetero.com`;
@@ -100,34 +83,33 @@ async function recuperarParticipante() {
   await cargarSemanas();
 }
 
-// ============================================
-// BOTONES DE NAVEGACIÓN
-// ============================================
+// --------------------------------------------
+// INICIO
+// --------------------------------------------
 
-escuchar("btn-comenzar", "click", () => {
+$("btn-comenzar").addEventListener("click", () => {
   mostrar("pantalla-login");
 });
 
-escuchar("btn-ir-registro", "click", () => {
+$("btn-ir-registro").addEventListener("click", () => {
   mostrar("pantalla-registro");
 });
 
-escuchar("btn-ir-login", "click", () => {
+$("btn-ir-login").addEventListener("click", () => {
   mostrar("pantalla-login");
 });
 
-// ============================================
+// --------------------------------------------
 // CREAR CUENTA
-// ============================================
+// --------------------------------------------
 
-escuchar("form-registro", "submit", async e => {
+$("form-registro").addEventListener("submit", async e => {
   e.preventDefault();
 
   const formulario = e.target;
-
-  const nombre = $("nombre-completo")?.value.trim() || "";
-  const usuario = $("usuario-registro")?.value.trim().toLowerCase() || "";
-  const contrasena = $("contrasena-registro")?.value || "";
+  const nombre = $("nombre-completo").value.trim();
+  const usuario = $("usuario-registro").value.trim().toLowerCase();
+  const contrasena = $("contrasena-registro").value;
 
   if (nombre.length < 3) {
     return mensaje("Escribe tu nombre completo.");
@@ -148,7 +130,6 @@ escuchar("form-registro", "submit", async e => {
   try {
     const correoInterno = crearCorreoInterno(usuario);
 
-    // Crear cuenta de autenticación
     const { data, error } = await db.auth.signUp({
       email: correoInterno,
       password: contrasena,
@@ -164,11 +145,10 @@ escuchar("form-registro", "submit", async e => {
 
     if (!data.session) {
       throw new Error(
-        "La cuenta se creó, pero no se inició sesión. Revisa la configuración de confirmación de correo en Supabase."
+        "La cuenta se creó, pero no se inició sesión. Verifica que la confirmación de correo esté desactivada en Supabase."
       );
     }
 
-    // Asociar la cuenta con el participante
     const { data: idParticipante, error: errorRegistro } =
       await db.rpc("register_participant", {
         p_username: usuario,
@@ -179,24 +159,24 @@ escuchar("form-registro", "submit", async e => {
 
     participanteId = idParticipante;
 
+    mensaje("¡Tu cuenta fue creada correctamente! Bienvenido al RETO CAFETERO.");
+
     formulario.reset();
-
-    mensaje("¡Tu cuenta fue creada correctamente!");
-
     await cargarSemanas();
 
   } catch (error) {
     console.error("Error al crear cuenta:", error);
 
-    const detalle = (error.message || "").toLowerCase();
-
     if (
-      detalle.includes("already registered") ||
-      detalle.includes("already been registered") ||
-      detalle.includes("duplicate key") ||
-      detalle.includes("unique constraint")
+      error.message?.toLowerCase().includes("already registered") ||
+      error.message?.toLowerCase().includes("already been registered")
     ) {
       mensaje("Ese nombre de usuario ya está registrado. Elige otro.");
+    } else if (
+      error.message?.toLowerCase().includes("duplicate key") ||
+      error.message?.toLowerCase().includes("unique constraint")
+    ) {
+      mensaje("Ese nombre de usuario ya existe. Elige otro.");
     } else {
       mensaje("No se pudo crear la cuenta: " + error.message);
     }
@@ -206,24 +186,19 @@ escuchar("form-registro", "submit", async e => {
   }
 });
 
-// ============================================
+// --------------------------------------------
 // INICIAR SESIÓN
-// ============================================
+// --------------------------------------------
 
-escuchar("form-login", "submit", async e => {
+$("form-login").addEventListener("submit", async e => {
   e.preventDefault();
 
   const formulario = e.target;
-
-  const usuario = $("usuario-login")?.value.trim().toLowerCase() || "";
-  const contrasena = $("contrasena-login")?.value || "";
+  const usuario = $("usuario-login").value.trim().toLowerCase();
+  const contrasena = $("contrasena-login").value;
 
   if (!validarUsuario(usuario)) {
     return mensaje("Escribe un nombre de usuario válido.");
-  }
-
-  if (!contrasena) {
-    return mensaje("Escribe tu contraseña.");
   }
 
   establecerCarga(formulario, true, "INGRESANDO...");
@@ -245,11 +220,8 @@ escuchar("form-login", "submit", async e => {
   } catch (error) {
     console.error("Error al iniciar sesión:", error);
 
-    const detalle = (error.message || "").toLowerCase();
-
     if (
-      detalle.includes("invalid login credentials") ||
-      detalle.includes("invalid email or password")
+      error.message?.toLowerCase().includes("invalid login credentials")
     ) {
       mensaje("Usuario o contraseña incorrectos.");
     } else {
@@ -261,9 +233,9 @@ escuchar("form-login", "submit", async e => {
   }
 });
 
-// ============================================
+// --------------------------------------------
 // RECUPERAR SESIÓN AL VOLVER A LA APLICACIÓN
-// ============================================
+// --------------------------------------------
 
 async function comprobarSesion() {
   try {
@@ -285,17 +257,16 @@ async function comprobarSesion() {
 
 comprobarSesion();
 
-// ============================================
+// --------------------------------------------
 // CERRAR SESIÓN
-// ============================================
+// --------------------------------------------
 
-escuchar("btn-cerrar-sesion", "click", async () => {
+$("btn-cerrar-sesion").addEventListener("click", async () => {
   const confirmar = confirm("¿Quieres cerrar tu sesión?");
 
   if (!confirmar) return;
 
   clearInterval(temporizador);
-  temporizador = null;
 
   const { error } = await db.auth.signOut();
 
@@ -307,14 +278,13 @@ escuchar("btn-cerrar-sesion", "click", async () => {
   participanteId = null;
   intentoId = null;
   dinamicaActual = null;
-  preguntas = [];
 
   mostrar("pantalla-inicio");
 });
 
-// ============================================
+// --------------------------------------------
 // CARGAR SEMANAS
-// ============================================
+// --------------------------------------------
 
 async function cargarSemanas() {
   try {
@@ -328,14 +298,10 @@ async function cargarSemanas() {
     semanasDisponibles = data || [];
 
     const lista = $("lista-semanas");
-
-    if (!lista) return;
-
     lista.innerHTML = "";
 
     semanasDisponibles.forEach(semana => {
       const boton = document.createElement("button");
-
       boton.className = "btn-principal";
       boton.textContent = semana.title || `Semana ${semana.id}`;
 
@@ -359,9 +325,9 @@ async function cargarSemanas() {
   }
 }
 
-// ============================================
+// --------------------------------------------
 // CARGAR DINÁMICAS
-// ============================================
+// --------------------------------------------
 
 async function cargarDinamicas(semanaId) {
   try {
@@ -375,14 +341,10 @@ async function cargarDinamicas(semanaId) {
     if (error) throw error;
 
     const lista = $("lista-dinamicas");
-
-    if (!lista) return;
-
     lista.innerHTML = "";
 
     (data || []).forEach(dinamica => {
       const boton = document.createElement("button");
-
       boton.className = "btn-principal";
       boton.textContent = dinamica.title || `Reto ${dinamica.number}`;
 
@@ -405,9 +367,10 @@ async function cargarDinamicas(semanaId) {
   }
 }
 
-// ============================================
-// INICIAR RETO
-// ============================================
+// --------------------------------------------
+// INICIAR RETO - CORREGIDO
+// Evita crear intentos duplicados
+// --------------------------------------------
 
 async function iniciarReto(dinamica) {
   if (!participanteId) {
@@ -415,12 +378,40 @@ async function iniciarReto(dinamica) {
   }
 
   dinamicaActual = dinamica;
-  preguntaActual = 0;
-  puntosTotales = 0;
-  respondiendo = false;
-  intentoId = null;
 
   try {
+    // Consultar si ya existe un intento para este participante y reto
+    const { data: existente, error: errorConsulta } = await db
+      .from("attempts")
+      .select("id, status, total_points")
+      .eq("participant_id", participanteId)
+      .eq("dynamic_id", dinamica.id)
+      .maybeSingle();
+
+    if (errorConsulta) throw errorConsulta;
+
+    // Si ya terminó, conservar y mostrar su resultado
+    if (existente && existente.status === "completed") {
+      return mensaje(
+        `Ya completaste esta dinámica con ${Number(
+          existente.total_points || 0
+        ).toLocaleString("es-CO")} puntos. Tu resultado está guardado.`
+      );
+    }
+
+    // Si existe un intento sin terminar, evitar duplicarlo
+    if (existente && existente.status === "in_progress") {
+      return mensaje(
+        "Ya tienes un intento iniciado en esta dinámica. Tu progreso está protegido. Contacta al administrador para recuperar este intento."
+      );
+    }
+
+    preguntaActual = 0;
+    puntosTotales = 0;
+    respondiendo = false;
+    intentoId = null;
+
+    // Consultar preguntas
     const { data, error } = await db
       .from("game_questions")
       .select("*")
@@ -435,7 +426,7 @@ async function iniciarReto(dinamica) {
 
     preguntas = data;
 
-    // Crear intento del participante
+    // Crear un intento nuevo únicamente si no existe uno anterior
     const { data: intento, error: errorIntento } = await db
       .from("attempts")
       .insert({
@@ -460,9 +451,9 @@ async function iniciarReto(dinamica) {
   }
 }
 
-// ============================================
+// --------------------------------------------
 // MOSTRAR PREGUNTAS
-// ============================================
+// --------------------------------------------
 
 function mostrarPregunta() {
   clearInterval(temporizador);
@@ -503,13 +494,10 @@ function mostrarPregunta() {
     }
   }
 
-  if (!Array.isArray(respuestas)) {
-    respuestas = [];
-  }
+  if (!Array.isArray(respuestas)) respuestas = [];
 
   respuestas.forEach(opcion => {
     const boton = document.createElement("button");
-
     boton.className = "btn-principal";
     boton.textContent = opcion;
 
@@ -522,7 +510,6 @@ function mostrarPregunta() {
 
   temporizador = setInterval(() => {
     segundos--;
-
     $("cronometro").textContent = segundos;
 
     if (segundos <= 0) {
@@ -531,30 +518,23 @@ function mostrarPregunta() {
   }, 1000);
 }
 
-// ============================================
+// --------------------------------------------
 // REGISTRAR RESPUESTA Y PUNTOS
-// ============================================
+// --------------------------------------------
 
 async function responder(respuesta) {
   if (respondiendo || temporizador === null) return;
 
   respondiendo = true;
-
   clearInterval(temporizador);
   temporizador = null;
 
   const pregunta = preguntas[preguntaActual];
-
-  const tiempoMs = Math.min(
-    Date.now() - inicioPregunta,
-    20000
-  );
+  const tiempoMs = Math.min(Date.now() - inicioPregunta, 20000);
 
   $("opciones-respuesta")
     .querySelectorAll("button")
-    .forEach(boton => {
-      boton.disabled = true;
-    });
+    .forEach(boton => boton.disabled = true);
 
   try {
     const { data, error } = await db.rpc("submit_game_answer", {
@@ -567,10 +547,7 @@ async function responder(respuesta) {
     if (error) throw error;
 
     const resultado = data || {};
-
-    const puntosGanados = Number(
-      resultado.points_awarded || 0
-    );
+    const puntosGanados = Number(resultado.points_awarded || 0);
 
     puntosTotales = Number(
       resultado.total_points ?? (puntosTotales + puntosGanados)
@@ -588,38 +565,33 @@ async function responder(respuesta) {
 
   } catch (error) {
     console.error("Error al guardar respuesta:", error);
-
     mensaje("No se pudo registrar tu respuesta: " + error.message);
-
     respondiendo = false;
     mostrarPregunta();
   }
 }
 
-// ============================================
+// --------------------------------------------
 // FINALIZAR RETO
-// La finalización se valida en Supabase
-// ============================================
+// --------------------------------------------
 
 async function finalizarReto() {
   clearInterval(temporizador);
   temporizador = null;
 
   try {
-    const { data, error } = await db.rpc("finish_game_attempt", {
-      p_attempt_id: intentoId
-    });
+    const { error } = await db
+      .from("attempts")
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        total_points: puntosTotales
+      })
+      .eq("id", intentoId);
 
     if (error) throw error;
 
-    // Si la función devuelve los puntos, usar el valor confirmado.
-    if (data && typeof data === "object" && data.total_points !== undefined) {
-      puntosTotales = Number(data.total_points);
-    }
-
-    $("puntuacion-final").textContent =
-      puntosTotales.toLocaleString("es-CO");
-
+    $("puntuacion-final").textContent = puntosTotales;
     $("detalle-puntuacion").textContent =
       "Has terminado todas las preguntas de este reto.";
 
@@ -628,41 +600,36 @@ async function finalizarReto() {
     mostrar("pantalla-resultados");
 
   } catch (error) {
-    console.error("Error al finalizar el reto:", error);
-
-    mensaje("No se pudo finalizar el reto: " + error.message);
+    console.error("Error al finalizar:", error);
+    mensaje("No se pudieron guardar los resultados: " + error.message);
   }
 }
 
-// ============================================
-// CONTINUAR DESPUÉS DEL RETO
-// ============================================
+// --------------------------------------------
+// CONTINUAR
+// --------------------------------------------
 
-escuchar("btn-continuar", "click", () => {
+$("btn-continuar").addEventListener("click", () => {
   if (dinamicaActual) {
     cargarDinamicas(dinamicaActual.week_id);
   }
 });
 
-// ============================================
+// --------------------------------------------
 // CLASIFICACIÓN
-// ============================================
+// --------------------------------------------
 
 function llenarSelectorSemanasRanking() {
   const selector = $("selector-semana-ranking");
-
   if (!selector) return;
 
   const valorAnterior = selector.value;
-
   selector.innerHTML = "";
 
   semanasDisponibles.forEach(semana => {
     const opcion = document.createElement("option");
-
     opcion.value = semana.id;
     opcion.textContent = semana.title || `Semana ${semana.id}`;
-
     selector.appendChild(opcion);
   });
 
@@ -675,13 +642,9 @@ function llenarSelectorSemanasRanking() {
 }
 
 function abrirClasificacion(origen) {
-  pantallaAnteriorClasificacion =
-    origen || "pantalla-semanas";
-
+  pantallaAnteriorClasificacion = origen || "pantalla-semanas";
   llenarSelectorSemanasRanking();
-
   mostrar("pantalla-clasificacion");
-
   cargarClasificacion();
 }
 
@@ -694,15 +657,13 @@ async function cargarClasificacion() {
 
 function agregarCelda(fila, contenido) {
   const celda = document.createElement("td");
-
   celda.textContent = contenido;
-
   fila.appendChild(celda);
 }
 
-// ============================================
+// --------------------------------------------
 // RANKING SEMANAL
-// ============================================
+// --------------------------------------------
 
 async function cargarRankingSemanal() {
   const cuerpo = $("ranking-semanal");
@@ -717,7 +678,6 @@ async function cargarRankingSemanal() {
     if (!selector.value) {
       cuerpo.innerHTML =
         '<tr><td colspan="3">Selecciona una semana.</td></tr>';
-
       return;
     }
 
@@ -734,7 +694,6 @@ async function cargarRankingSemanal() {
     if (!data || !data.length) {
       cuerpo.innerHTML =
         '<tr><td colspan="3">Aún no hay participantes con puntos en esta semana.</td></tr>';
-
       return;
     }
 
@@ -743,7 +702,6 @@ async function cargarRankingSemanal() {
 
       agregarCelda(fila, i + 1);
       agregarCelda(fila, persona.display_name || "Participante");
-
       agregarCelda(
         fila,
         Number(persona.weekly_points || 0).toLocaleString("es-CO")
@@ -754,19 +712,17 @@ async function cargarRankingSemanal() {
 
   } catch (error) {
     console.error("Error en ranking semanal:", error);
-
     cuerpo.innerHTML =
       '<tr><td colspan="3">No se pudo cargar la clasificación semanal.</td></tr>';
   }
 }
 
-// ============================================
+// --------------------------------------------
 // RANKING ACUMULADO
-// ============================================
+// --------------------------------------------
 
 async function cargarRankingAcumulado() {
   const cuerpo = $("ranking-acumulado");
-
   if (!cuerpo) return;
 
   cuerpo.innerHTML =
@@ -780,7 +736,6 @@ async function cargarRankingAcumulado() {
 
     if (error) throw error;
 
-    // Evitar repetir participantes en el ranking acumulado
     const unicos = new Map();
 
     (data || []).forEach(persona => {
@@ -806,7 +761,6 @@ async function cargarRankingAcumulado() {
     if (!ordenados.length) {
       cuerpo.innerHTML =
         '<tr><td colspan="3">Aún no hay puntuaciones acumuladas.</td></tr>';
-
       return;
     }
 
@@ -815,7 +769,6 @@ async function cargarRankingAcumulado() {
 
       agregarCelda(fila, i + 1);
       agregarCelda(fila, persona.display_name || "Participante");
-
       agregarCelda(
         fila,
         Number(persona.cumulative_points || 0).toLocaleString("es-CO")
@@ -826,34 +779,29 @@ async function cargarRankingAcumulado() {
 
   } catch (error) {
     console.error("Error en ranking acumulado:", error);
-
     cuerpo.innerHTML =
       '<tr><td colspan="3">No se pudo cargar la clasificación acumulada.</td></tr>';
   }
 }
 
-// ============================================
+// --------------------------------------------
 // BOTONES DE CLASIFICACIÓN
-// ============================================
+// --------------------------------------------
 
-escuchar("btn-ver-clasificacion", "click", () => {
+$("btn-ver-clasificacion").addEventListener("click", () => {
   abrirClasificacion("pantalla-semanas");
 });
 
-escuchar("btn-clasificacion-dinamicas", "click", () => {
+$("btn-clasificacion-dinamicas").addEventListener("click", () => {
   abrirClasificacion("pantalla-dinamicas");
 });
 
-escuchar("btn-volver-clasificacion", "click", () => {
+$("btn-volver-clasificacion").addEventListener("click", () => {
   mostrar(pantallaAnteriorClasificacion);
 });
 
-escuchar("selector-semana-ranking", "change", () => {
+$("selector-semana-ranking").addEventListener("change", () => {
   cargarRankingSemanal();
 });
 
-// ============================================
-// FIN DEL SISTEMA
-// ============================================
-
-console.log("RETO CAFETERO: sistema cargado correctamente.");
+console.log("RETO CAFETERO: sistema de cuentas y clasificación cargado.");
