@@ -10,167 +10,142 @@
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-
 <body>
-  <div id="app">
+<div id="app">
+  <header class="encabezado">
+    <div class="marca">
+      <span class="marca-icono">☕</span>
+      <div>
+        <h1>RETO CAFETERO</h1>
+        <p>Cooperativa de Caficultores de Santander</p>
+      </div>
+    </div>
+  </header>
 
-    <header class="encabezado">
-      <div class="marca">
-        <span class="marca-icono">☕</span>
-        <div>
-          <h1>RETO CAFETERO</h1>
-          <p>Cooperativa de Caficultores de Santander</p>
+  <main class="contenedor">
+
+    <section id="pantalla-inicio" class="pantalla">
+      <div class="bienvenida">
+        <span class="etiqueta">APRENDE · PARTICIPA · GANA</span>
+        <h2>¡Bienvenido al<br>RETO CAFETERO!</h2>
+        <p>Pon a prueba tus conocimientos, demuestra tu agilidad y descubre cuánto sabes de nuestra Cooperativa.</p>
+        <button id="btn-comenzar" class="btn-principal">COMENZAR</button>
+      </div>
+    </section>
+
+    <section id="pantalla-registro" class="pantalla oculto">
+      <h2>Crear cuenta</h2>
+      <p>Regístrate para participar en el RETO CAFETERO.</p>
+      <form id="form-registro">
+        <label for="nombre-completo">Nombre completo</label>
+        <input type="text" id="nombre-completo" placeholder="Escribe tu nombre completo" required>
+
+        <label for="usuario-registro">Nombre de usuario</label>
+        <input type="text" id="usuario-registro" placeholder="Ej. mafecita" minlength="3" maxlength="24" required>
+        <small>Usa letras sin tildes, números, punto, guion o guion bajo.</small>
+
+        <label for="contrasena-registro">Contraseña</label>
+        <input type="password" id="contrasena-registro" placeholder="Mínimo 8 caracteres" minlength="8" required>
+
+        <button type="submit" class="btn-principal">CREAR MI CUENTA</button>
+      </form>
+      <p>¿Ya tienes cuenta?</p>
+      <button id="btn-ir-login" class="btn-principal">INICIAR SESIÓN</button>
+    </section>
+
+    <section id="pantalla-login" class="pantalla oculto">
+      <h2>Iniciar sesión</h2>
+      <p>Ingresa con tu usuario y contraseña.</p>
+      <form id="form-login">
+        <label for="usuario-login">Nombre de usuario</label>
+        <input type="text" id="usuario-login" placeholder="Tu nombre de usuario" required>
+
+        <label for="contrasena-login">Contraseña</label>
+        <input type="password" id="contrasena-login" placeholder="Tu contraseña" required>
+
+        <button type="submit" class="btn-principal">INGRESAR</button>
+      </form>
+      <p>¿Aún no tienes cuenta?</p>
+      <button id="btn-ir-registro" class="btn-principal">CREAR CUENTA</button>
+    </section>
+
+    <section id="pantalla-semanas" class="pantalla oculto">
+      <h2>Selecciona tu semana</h2>
+      <p>Elige el desafío que deseas realizar.</p>
+      <div id="lista-semanas" class="lista-semanas"></div>
+      <button id="btn-ver-clasificacion" class="btn-principal">VER CLASIFICACIÓN</button>
+      <button id="btn-cerrar-sesion" class="btn-principal">CERRAR SESIÓN</button>
+    </section>
+
+    <section id="pantalla-dinamicas" class="pantalla oculto">
+      <h2>Selecciona tu reto</h2>
+      <div id="lista-dinamicas"></div>
+      <button id="btn-clasificacion-dinamicas" class="btn-principal">VER CLASIFICACIÓN</button>
+    </section>
+
+    <section id="pantalla-juego" class="pantalla oculto">
+      <div class="informacion-juego">
+        <span id="numero-pregunta">Pregunta 1</span>
+        <span id="cronometro">20</span>
+        <span id="puntos">0 puntos</span>
+      </div>
+      <div class="progreso"><div id="barra-progreso"></div></div>
+      <h2 id="enunciado-pregunta">Cargando pregunta...</h2>
+      <div id="opciones-respuesta"></div>
+      <p id="mensaje-respuesta"></p>
+    </section>
+
+    <section id="pantalla-resultados" class="pantalla oculto">
+      <div class="resultado-final">
+        <span class="trofeo">🏆</span>
+        <h2>¡Reto completado!</h2>
+        <p>Tu puntuación final es:</p>
+        <strong id="puntuacion-final">0</strong>
+        <p id="detalle-puntuacion"></p>
+        <button id="btn-continuar" class="btn-principal">CONTINUAR</button>
+      </div>
+    </section>
+
+    <section id="pantalla-clasificacion" class="pantalla oculto">
+      <h2>🏆 Clasificación</h2>
+      <p>Descubre quiénes lideran el RETO CAFETERO.</p>
+
+      <div class="bloque-clasificacion">
+        <h3>Ranking semanal</h3>
+        <label for="selector-semana-ranking">Selecciona una semana:</label>
+        <select id="selector-semana-ranking"></select>
+        <div class="tabla-contenedor">
+          <table>
+            <thead><tr><th>Posición</th><th>Participante</th><th>Puntos</th></tr></thead>
+            <tbody id="ranking-semanal">
+              <tr><td colspan="3">Cargando clasificación...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
-    </header>
 
-    <main class="contenedor">
-
-      <section id="pantalla-inicio" class="pantalla">
-        <div class="bienvenida">
-          <span class="etiqueta">APRENDE · PARTICIPA · GANA</span>
-          <h2>¡Bienvenido al<br>RETO CAFETERO!</h2>
-          <p>Pon a prueba tus conocimientos, demuestra tu agilidad y descubre cuánto sabes de nuestra Cooperativa.</p>
-          <button id="btn-comenzar" class="btn-principal">COMENZAR</button>
+      <div class="bloque-clasificacion">
+        <h3>Ranking acumulado</h3>
+        <p>Los participantes con mayor puntuación total.</p>
+        <div class="tabla-contenedor">
+          <table>
+            <thead><tr><th>Posición</th><th>Participante</th><th>Puntos acumulados</th></tr></thead>
+            <tbody id="ranking-acumulado">
+              <tr><td colspan="3">Cargando clasificación...</td></tr>
+            </tbody>
+          </table>
         </div>
-      </section>
+      </div>
+      <button id="btn-volver-clasificacion" class="btn-principal">VOLVER A LAS SEMANAS</button>
+    </section>
 
-      <section id="pantalla-registro" class="pantalla oculto">
-        <h2>Registro de participante</h2>
-        <p>Ingresa tus datos para participar.</p>
+  </main>
 
-        <form id="form-registro">
-          <label for="nombre">Nombre completo</label>
-          <input type="text" id="nombre" placeholder="Escribe tu nombre" required>
-
-          <label for="documento">Número de documento</label>
-          <input type="text" id="documento" placeholder="Número de documento" required>
-
-          <label for="punto">Área o punto de compra</label>
-          <input type="text" id="punto" placeholder="Escribe tu área o punto" required>
-
-          <button type="submit" class="btn-principal">REGISTRARME</button>
-        </form>
-      </section>
-
-      <section id="pantalla-semanas" class="pantalla oculto">
-        <h2>Selecciona tu semana</h2>
-        <p>Elige el desafío que deseas realizar.</p>
-
-        <div id="lista-semanas" class="lista-semanas"></div>
-
-        <button id="btn-ver-clasificacion" class="btn-principal">
-          VER CLASIFICACIÓN
-        </button>
-      </section>
-
-      <section id="pantalla-dinamicas" class="pantalla oculto">
-        <h2>Selecciona tu reto</h2>
-        <div id="lista-dinamicas"></div>
-
-        <button id="btn-clasificacion-dinamicas" class="btn-principal">
-          VER CLASIFICACIÓN
-        </button>
-      </section>
-
-      <section id="pantalla-juego" class="pantalla oculto">
-        <div class="informacion-juego">
-          <span id="numero-pregunta">Pregunta 1</span>
-          <span id="cronometro">20</span>
-          <span id="puntos">0 puntos</span>
-        </div>
-
-        <div class="progreso">
-          <div id="barra-progreso"></div>
-        </div>
-
-        <h2 id="enunciado-pregunta">Cargando pregunta...</h2>
-        <div id="opciones-respuesta"></div>
-        <p id="mensaje-respuesta"></p>
-      </section>
-
-      <section id="pantalla-resultados" class="pantalla oculto">
-        <div class="resultado-final">
-          <span class="trofeo">🏆</span>
-          <h2>¡Reto completado!</h2>
-          <p>Tu puntuación final es:</p>
-          <strong id="puntuacion-final">0</strong>
-          <p id="detalle-puntuacion"></p>
-          <button id="btn-continuar" class="btn-principal">CONTINUAR</button>
-        </div>
-      </section>
-
-      <!-- CLASIFICACIÓN -->
-      <section id="pantalla-clasificacion" class="pantalla oculto">
-        <h2>🏆 Clasificación</h2>
-        <p>Descubre quiénes lideran el RETO CAFETERO.</p>
-
-        <div class="bloque-clasificacion">
-          <h3>Ranking semanal</h3>
-          <label for="selector-semana-ranking">Selecciona una semana:</label>
-
-          <select id="selector-semana-ranking">
-            <option value="1">Semana 1</option>
-            <option value="2">Semana 2</option>
-            <option value="3">Semana 3</option>
-            <option value="4">Semana 4</option>
-            <option value="5">Semana 5</option>
-          </select>
-
-          <div class="tabla-contenedor">
-            <table id="tabla-ranking-semanal">
-              <thead>
-                <tr>
-                  <th>Posición</th>
-                  <th>Participante</th>
-                  <th>Puntos</th>
-                </tr>
-              </thead>
-              <tbody id="ranking-semanal">
-                <tr>
-                  <td colspan="3">Cargando clasificación...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="bloque-clasificacion">
-          <h3>Ranking acumulado</h3>
-          <p>Los participantes con mayor puntuación total.</p>
-
-          <div class="tabla-contenedor">
-            <table id="tabla-ranking-acumulado">
-              <thead>
-                <tr>
-                  <th>Posición</th>
-                  <th>Participante</th>
-                  <th>Puntos acumulados</th>
-                </tr>
-              </thead>
-              <tbody id="ranking-acumulado">
-                <tr>
-                  <td colspan="3">Cargando clasificación...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <button id="btn-volver-clasificacion" class="btn-principal">
-          VOLVER A LAS SEMANAS
-        </button>
-      </section>
-
-    </main>
-
-    <footer>
-      <p>Cooperativa de Caficultores de Santander</p>
-      <p>RETO CAFETERO © 2026</p>
-    </footer>
-
-  </div>
-
-  <script src="app.js"></script>
+  <footer>
+    <p>Cooperativa de Caficultores de Santander</p>
+    <p>RETO CAFETERO © 2026</p>
+  </footer>
+</div>
+<script src="app.js"></script>
 </body>
 </html>
