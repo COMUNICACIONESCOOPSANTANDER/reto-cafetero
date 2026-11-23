@@ -1,6 +1,7 @@
 
 // ============================================
 // RETO CAFETERO - COOPERATIVA DE CAFICULTORES
+// Aplicación conectada a Supabase
 // ============================================
 
 const SUPABASE_URL = "https://voqdqsoxlqwplhfjchrz.supabase.co";
@@ -29,7 +30,8 @@ function mostrar(pantalla) {
     p.classList.add("oculto");
   });
 
-  $(pantalla).classList.remove("oculto");
+  const elemento = $(pantalla);
+  if (elemento) elemento.classList.remove("oculto");
 }
 
 // MENSAJES
@@ -60,15 +62,13 @@ $("form-registro").addEventListener("submit", async e => {
   boton.textContent = "REGISTRANDO...";
 
   try {
-    const { error: authError } =
-      await db.auth.signInAnonymously();
+    const { error: authError } = await db.auth.signInAnonymously();
 
     if (authError) throw authError;
 
-    const { data, error } = await db.rpc(
-      "register_participant",
-      { p_name: nombre }
-    );
+    const { data, error } = await db.rpc("register_participant", {
+      p_name: nombre
+    });
 
     if (error) throw error;
 
@@ -104,6 +104,7 @@ async function cargarSemanas() {
 
     data.forEach(semana => {
       const boton = document.createElement("button");
+
       boton.className = "btn-principal";
       boton.textContent = semana.title || `Semana ${semana.id}`;
 
@@ -142,6 +143,7 @@ async function cargarDinamicas(semanaId) {
 
     data.forEach(dinamica => {
       const boton = document.createElement("button");
+
       boton.className = "btn-principal";
       boton.textContent = dinamica.title || `Reto ${dinamica.number}`;
 
@@ -175,7 +177,7 @@ async function iniciarReto(dinamica) {
   respondiendo = false;
 
   try {
-    // CONSULTAR LA TABLA CORRECTA
+    // CARGAR PREGUNTAS DESDE LA VISTA
     const { data, error } = await db
       .from("game_questions")
       .select("*")
@@ -190,25 +192,17 @@ async function iniciarReto(dinamica) {
 
     preguntas = data;
 
-    // Verificar que las preguntas tengan respuesta correcta
-    if (preguntas.some(p => !p.correct_answer)) {
-      return mensaje(
-        "Las preguntas no están entregando la respuesta correcta. " +
-        "Debemos revisar la configuración de game_questions en Supabase."
-      );
-    }
-
     // CREAR INTENTO
-    const { data: intento, error: errorIntento } =
-      await db.from("attempts")
-        .insert({
-          participant_id: participanteId,
-          dynamic_id: dinamica.id,
-          status: "in_progress",
-          total_points: 0
-        })
-        .select("id")
-        .single();
+    const { data: intento, error: errorIntento } = await db
+      .from("attempts")
+      .insert({
+        participant_id: participanteId,
+        dynamic_id: dinamica.id,
+        status: "in_progress",
+        total_points: 0
+      })
+      .select("id")
+      .single();
 
     if (errorIntento) throw errorIntento;
 
@@ -272,6 +266,7 @@ function mostrarPregunta() {
 
   respuestas.forEach(opcion => {
     const boton = document.createElement("button");
+
     boton.className = "btn-principal";
     boton.textContent = opcion;
 
@@ -308,57 +303,45 @@ async function responder(respuesta) {
 
   const tiempoMs = Math.min(
     Date.now() - inicioPregunta,
-    20000
+    (pregunta.time_limit_seconds || 20) * 1000
   );
-
-  const correcta =
-    respuesta !== null &&
-    String(respuesta).trim().toLowerCase() ===
-    String(pregunta.correct_answer).trim().toLowerCase();
-
-  let puntos = 0;
-
-  if (correcta) {
-    let bonus = 0;
-
-    if (tiempoMs <= 5000) {
-      bonus = 500;
-    } else if (tiempoMs <= 10000) {
-      bonus = 300;
-    } else if (tiempoMs <= 15000) {
-      bonus = 100;
-    }
-
-    puntos = (pregunta.base_points || 1000) + bonus;
-
-    if (pregunta.is_double) {
-      puntos *= 2;
-    }
-
-    puntosTotales += puntos;
-  }
-
-  $("puntos").textContent = `${puntosTotales} puntos`;
-
-  $("mensaje-respuesta").textContent = correcta
-    ? `¡Correcto! +${puntos} puntos`
-    : "Respuesta incorrecta.";
 
   $("opciones-respuesta")
     .querySelectorAll("button")
     .forEach(boton => boton.disabled = true);
 
   try {
-    const { error } = await db
-      .from("responses")
-      .insert({
-        attempt_id: intentoId,
-        question_id: pregunta.id,
-        answer: respuesta || "",
-        is_correct: correcta
-      });
+    // VALIDAR Y CALCULAR PUNTOS EN SUPABASE
+    const { data, error } = await db.rpc("submit_game_answer", {
+      p_attempt_id: intentoId,
+      p_question_id: pregunta.id,
+      p_answer: respuesta === null ? "" : String(respuesta),
+      p_response_time_ms: Math.round(tiempoMs)
+    });
 
     if (error) throw error;
+
+    // LEER RESULTADO DEVUELTO POR SUPABASE
+    const resultado = Array.isArray(data) ? data[0] : data;
+
+    if (!resultado) {
+      throw new Error("Supabase no devolvió el resultado de la respuesta.");
+    }
+
+    const correcta = resultado.is_correct === true;
+    const puntos = Number(resultado.points_awarded || 0);
+
+    if (resultado.total_points !== undefined) {
+      puntosTotales = Number(resultado.total_points);
+    } else {
+      puntosTotales += puntos;
+    }
+
+    $("puntos").textContent = `${puntosTotales} puntos`;
+
+    $("mensaje-respuesta").textContent = correcta
+      ? `¡Correcto! +${puntos} puntos`
+      : "Respuesta incorrecta.";
 
     preguntaActual++;
 
