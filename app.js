@@ -1,408 +1,147 @@
 
 // ============================================
-// RETO CAFETERO - COOPERATIVA DE CAFICULTORES
-// Aplicación conectada a Supabase
+// CLASIFICACIÓN - RETO CAFETERO
 // ============================================
 
-const SUPABASE_URL = "https://voqdqsoxlqwplhfjchrz.supabase.co";
-const SUPABASE_KEY = "sb_publishable_NgaynrOUy74BRpZF-6x5kw_HkjhehPz";
+// Abrir clasificación
+$("btn-ver-clasificacion").addEventListener("click", abrirClasificacion);
 
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+$("btn-clasificacion-dinamicas").addEventListener("click", abrirClasificacion);
 
-// VARIABLES
-let participanteId = null;
-let dinamicaActual = null;
-let preguntas = [];
-let preguntaActual = 0;
-let intentoId = null;
-let puntosTotales = 0;
-let inicioPregunta = 0;
-let temporizador = null;
-let segundos = 20;
-let respondiendo = false;
-
-// ELEMENTOS HTML
-const $ = id => document.getElementById(id);
-
-// CAMBIAR DE PANTALLA
-function mostrar(pantalla) {
-  document.querySelectorAll(".pantalla").forEach(p => {
-    p.classList.add("oculto");
-  });
-
-  const elemento = $(pantalla);
-  if (elemento) elemento.classList.remove("oculto");
-}
-
-// MENSAJES
-function mensaje(texto) {
-  alert(texto);
-}
-
-// BOTÓN COMENZAR
-$("btn-comenzar").addEventListener("click", () => {
-  mostrar("pantalla-registro");
+// Volver a las semanas
+$("btn-volver-clasificacion").addEventListener("click", () => {
+  mostrar("pantalla-semanas");
 });
 
-// ============================================
-// REGISTRO DE PARTICIPANTE
-// ============================================
+// Cambiar semana del ranking
+$("selector-semana-ranking").addEventListener("change", cargarRankingSemanal);
 
-$("form-registro").addEventListener("submit", async e => {
-  e.preventDefault();
 
-  const nombre = $("nombre").value.trim();
-
-  if (!nombre) {
-    return mensaje("Escribe tu nombre completo.");
-  }
-
-  const boton = e.target.querySelector('button[type="submit"]');
-  boton.disabled = true;
-  boton.textContent = "REGISTRANDO...";
-
-  try {
-    const { error: authError } = await db.auth.signInAnonymously();
-
-    if (authError) throw authError;
-
-    const { data, error } = await db.rpc("register_participant", {
-      p_name: nombre
-    });
-
-    if (error) throw error;
-
-    participanteId = data;
-
-    await cargarSemanas();
-
-  } catch (error) {
-    console.error("Error de registro:", error);
-    mensaje("No se pudo registrar: " + error.message);
-
-  } finally {
-    boton.disabled = false;
-    boton.textContent = "REGISTRARME";
-  }
-});
-
-// ============================================
-// CARGAR SEMANAS
-// ============================================
-
-async function cargarSemanas() {
-  try {
-    const { data, error } = await db
-      .from("weeks")
-      .select("*")
-      .order("id");
-
-    if (error) throw error;
-
-    const lista = $("lista-semanas");
-    lista.innerHTML = "";
-
-    data.forEach(semana => {
-      const boton = document.createElement("button");
-
-      boton.className = "btn-principal";
-      boton.textContent = semana.title || `Semana ${semana.id}`;
-
-      boton.addEventListener("click", () => {
-        cargarDinamicas(semana.id);
-      });
-
-      lista.appendChild(boton);
-    });
-
-    mostrar("pantalla-semanas");
-
-  } catch (error) {
-    console.error("Error al cargar semanas:", error);
-    mensaje("No se pudieron cargar las semanas: " + error.message);
-  }
+// Mostrar pantalla y consultar rankings
+async function abrirClasificacion() {
+  mostrar("pantalla-clasificacion");
+  await cargarRankingSemanal();
+  await cargarRankingAcumulado();
 }
 
+
 // ============================================
-// CARGAR DINÁMICAS
+// RANKING SEMANAL
 // ============================================
 
-async function cargarDinamicas(semanaId) {
+async function cargarRankingSemanal() {
+  const semana = $("selector-semana-ranking").value;
+  const tabla = $("ranking-semanal");
+
+  tabla.innerHTML = "<tr><td colspan='3'>Cargando...</td></tr>";
+
   try {
     const { data, error } = await db
-      .from("dynamics")
-      .select("*")
-      .eq("week_id", semanaId)
-      .eq("is_active", true)
-      .order("number");
+      .from("leaderboard")
+      .select("participant_id, display_name, week_id, weekly_points")
+      .eq("week_id", Number(semana))
+      .order("weekly_points", { ascending: false });
 
     if (error) throw error;
 
-    const lista = $("lista-dinamicas");
-    lista.innerHTML = "";
-
-    data.forEach(dinamica => {
-      const boton = document.createElement("button");
-
-      boton.className = "btn-principal";
-      boton.textContent = dinamica.title || `Reto ${dinamica.number}`;
-
-      boton.addEventListener("click", () => {
-        iniciarReto(dinamica);
-      });
-
-      lista.appendChild(boton);
-    });
-
-    if (!data.length) {
-      lista.textContent = "No hay retos activos todavía.";
-    }
-
-    mostrar("pantalla-dinamicas");
-
-  } catch (error) {
-    console.error("Error al cargar dinámicas:", error);
-    mensaje("No se pudieron cargar los retos: " + error.message);
-  }
-}
-
-// ============================================
-// INICIAR RETO
-// ============================================
-
-async function iniciarReto(dinamica) {
-  dinamicaActual = dinamica;
-  preguntaActual = 0;
-  puntosTotales = 0;
-  respondiendo = false;
-
-  try {
-    // CARGAR PREGUNTAS DESDE LA VISTA
-    const { data, error } = await db
-      .from("game_questions")
-      .select("*")
-      .eq("dynamic_id", dinamica.id)
-      .order("number");
-
-    if (error) throw error;
+    tabla.innerHTML = "";
 
     if (!data || data.length === 0) {
-      return mensaje("Este reto todavía no tiene preguntas.");
+      tabla.innerHTML =
+        "<tr><td colspan='3'>Todavía no hay participantes con puntos.</td></tr>";
+      return;
     }
 
-    preguntas = data;
+    data.forEach((persona, indice) => {
+      const fila = document.createElement("tr");
 
-    // CREAR INTENTO
-    const { data: intento, error: errorIntento } = await db
-      .from("attempts")
-      .insert({
-        participant_id: participanteId,
-        dynamic_id: dinamica.id,
-        status: "in_progress",
-        total_points: 0
-      })
-      .select("id")
-      .single();
+      const posicion = document.createElement("td");
+      posicion.textContent = indice + 1;
 
-    if (errorIntento) throw errorIntento;
+      const nombre = document.createElement("td");
+      nombre.textContent = persona.display_name;
 
-    intentoId = intento.id;
+      const puntos = document.createElement("td");
+      puntos.textContent = Number(persona.weekly_points).toLocaleString("es-CO");
 
-    mostrar("pantalla-juego");
-    mostrarPregunta();
+      fila.append(posicion, nombre, puntos);
+      tabla.appendChild(fila);
+    });
 
   } catch (error) {
-    console.error("Error al iniciar reto:", error);
-    mensaje("No se pudo iniciar el reto: " + error.message);
+    console.error("Error en ranking semanal:", error);
+    tabla.innerHTML =
+      "<tr><td colspan='3'>No se pudo cargar el ranking semanal.</td></tr>";
   }
 }
 
-// ============================================
-// MOSTRAR PREGUNTA
-// ============================================
-
-function mostrarPregunta() {
-  clearInterval(temporizador);
-  temporizador = null;
-  respondiendo = false;
-
-  if (preguntaActual >= preguntas.length) {
-    finalizarReto();
-    return;
-  }
-
-  const pregunta = preguntas[preguntaActual];
-
-  segundos = pregunta.time_limit_seconds || 20;
-  inicioPregunta = Date.now();
-
-  $("numero-pregunta").textContent =
-    `Pregunta ${preguntaActual + 1} de ${preguntas.length}`;
-
-  $("cronometro").textContent = segundos;
-  $("puntos").textContent = `${puntosTotales} puntos`;
-  $("enunciado-pregunta").textContent = pregunta.prompt;
-  $("mensaje-respuesta").textContent = "";
-
-  $("barra-progreso").style.width =
-    `${(preguntaActual / preguntas.length) * 100}%`;
-
-  const opciones = $("opciones-respuesta");
-  opciones.innerHTML = "";
-
-  let respuestas = pregunta.options || [];
-
-  if (typeof respuestas === "string") {
-    try {
-      respuestas = JSON.parse(respuestas);
-    } catch {
-      respuestas = respuestas.split(",");
-    }
-  }
-
-  if (!Array.isArray(respuestas)) {
-    respuestas = [];
-  }
-
-  respuestas.forEach(opcion => {
-    const boton = document.createElement("button");
-
-    boton.className = "btn-principal";
-    boton.textContent = opcion;
-
-    boton.addEventListener("click", () => {
-      responder(opcion);
-    });
-
-    opciones.appendChild(boton);
-  });
-
-  temporizador = setInterval(() => {
-    segundos--;
-    $("cronometro").textContent = segundos;
-
-    if (segundos <= 0) {
-      responder(null);
-    }
-  }, 1000);
-}
 
 // ============================================
-// RESPONDER PREGUNTA
+// RANKING ACUMULADO
 // ============================================
 
-async function responder(respuesta) {
-  if (respondiendo || temporizador === null) return;
+async function cargarRankingAcumulado() {
+  const tabla = $("ranking-acumulado");
 
-  respondiendo = true;
-
-  clearInterval(temporizador);
-  temporizador = null;
-
-  const pregunta = preguntas[preguntaActual];
-
-  const tiempoMs = Math.min(
-    Date.now() - inicioPregunta,
-    (pregunta.time_limit_seconds || 20) * 1000
-  );
-
-  $("opciones-respuesta")
-    .querySelectorAll("button")
-    .forEach(boton => boton.disabled = true);
+  tabla.innerHTML = "<tr><td colspan='3'>Cargando...</td></tr>";
 
   try {
-    // VALIDAR Y CALCULAR PUNTOS EN SUPABASE
-    const { data, error } = await db.rpc("submit_game_answer", {
-      p_attempt_id: intentoId,
-      p_question_id: pregunta.id,
-      p_answer: respuesta === null ? "" : String(respuesta),
-      p_response_time_ms: Math.round(tiempoMs)
-    });
+    const { data, error } = await db
+      .from("leaderboard")
+      .select("participant_id, display_name, cumulative_points")
+      .order("cumulative_points", { ascending: false });
 
     if (error) throw error;
 
-    // LEER RESULTADO DEVUELTO POR SUPABASE
-    const resultado = Array.isArray(data) ? data[0] : data;
+    // Evitar repetir participantes que aparecen en varias semanas
+    const participantes = new Map();
 
-    if (!resultado) {
-      throw new Error("Supabase no devolvió el resultado de la respuesta.");
+    data.forEach(persona => {
+      const anterior = participantes.get(persona.participant_id);
+
+      if (
+        !anterior ||
+        Number(persona.cumulative_points) > Number(anterior.cumulative_points)
+      ) {
+        participantes.set(persona.participant_id, persona);
+      }
+    });
+
+    const ranking = Array.from(participantes.values())
+      .sort((a, b) =>
+        Number(b.cumulative_points) - Number(a.cumulative_points)
+      );
+
+    tabla.innerHTML = "";
+
+    if (ranking.length === 0) {
+      tabla.innerHTML =
+        "<tr><td colspan='3'>Todavía no hay participantes.</td></tr>";
+      return;
     }
 
-    const correcta = resultado.is_correct === true;
-    const puntos = Number(resultado.points_awarded || 0);
+    ranking.forEach((persona, indice) => {
+      const fila = document.createElement("tr");
 
-    if (resultado.total_points !== undefined) {
-      puntosTotales = Number(resultado.total_points);
-    } else {
-      puntosTotales += puntos;
-    }
+      const posicion = document.createElement("td");
+      posicion.textContent = indice + 1;
 
-    $("puntos").textContent = `${puntosTotales} puntos`;
+      const nombre = document.createElement("td");
+      nombre.textContent = persona.display_name;
 
-    $("mensaje-respuesta").textContent = correcta
-      ? `¡Correcto! +${puntos} puntos`
-      : "Respuesta incorrecta.";
+      const puntos = document.createElement("td");
+      puntos.textContent =
+        Number(persona.cumulative_points).toLocaleString("es-CO");
 
-    preguntaActual++;
-
-    setTimeout(() => {
-      mostrarPregunta();
-    }, 1200);
+      fila.append(posicion, nombre, puntos);
+      tabla.appendChild(fila);
+    });
 
   } catch (error) {
-    console.error("Error al guardar respuesta:", error);
-    mensaje("No se pudo guardar la respuesta: " + error.message);
-    respondiendo = false;
+    console.error("Error en ranking acumulado:", error);
+    tabla.innerHTML =
+      "<tr><td colspan='3'>No se pudo cargar el ranking acumulado.</td></tr>";
   }
 }
 
-// ============================================
-// FINALIZAR RETO
-// ============================================
-
-async function finalizarReto() {
-  clearInterval(temporizador);
-  temporizador = null;
-
-  try {
-    const { error } = await db
-      .from("attempts")
-      .update({
-        status: "completed",
-        completed_at: new Date().toISOString(),
-        total_points: puntosTotales
-      })
-      .eq("id", intentoId);
-
-    if (error) throw error;
-
-    $("puntuacion-final").textContent = puntosTotales;
-
-    $("detalle-puntuacion").textContent =
-      "Has terminado todas las preguntas de este reto.";
-
-    $("barra-progreso").style.width = "100%";
-
-    mostrar("pantalla-resultados");
-
-  } catch (error) {
-    console.error("Error al finalizar:", error);
-    mensaje("No se pudieron guardar los resultados: " + error.message);
-  }
-}
-
-// ============================================
-// CONTINUAR
-// ============================================
-
-$("btn-continuar").addEventListener("click", () => {
-  if (dinamicaActual) {
-    cargarDinamicas(dinamicaActual.week_id);
-  }
-});
-
-// ============================================
-// FIN
-// ============================================
-
-console.log("RETO CAFETERO conectado a Supabase.");
+console.log("Clasificación del RETO CAFETERO activada.");
