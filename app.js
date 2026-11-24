@@ -1165,7 +1165,8 @@ $("btn-clasificacion-dinamicas").addEventListener("click", () => {
 });
 
 $("btn-volver-clasificacion").addEventListener("click", () => {
-  mostrar(pantallaAnteriorClasificacion);
+  // Siempre regresar al selector de las cinco semanas.
+  cargarSemanas();
 });
 
 $("selector-semana-ranking").addEventListener("change", () => {
