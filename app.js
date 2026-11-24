@@ -326,7 +326,7 @@ async function cargarSemanas() {
 }
 
 // --------------------------------------------
-// CARGAR DINÁMICAS
+// CARGAR DINÁMICAS Y DESBLOQUEO SECUENCIAL
 // --------------------------------------------
 
 async function cargarDinamicas(semanaId) {
@@ -343,21 +343,73 @@ async function cargarDinamicas(semanaId) {
     const lista = $("lista-dinamicas");
     lista.innerHTML = "";
 
-    (data || []).forEach(dinamica => {
+    const dinamicas = data || [];
+
+    if (!dinamicas.length) {
+      lista.textContent = "No hay retos activos todavía.";
+      mostrar("pantalla-dinamicas");
+      return;
+    }
+
+    // Consultar intentos propios para controlar el desbloqueo.
+    const idsDinamicas = dinamicas.map(d => d.id);
+
+    const { data: intentos, error: errorIntentos } = await db
+      .from("attempts")
+      .select("dynamic_id, status, total_points")
+      .eq("participant_id", participanteId)
+      .in("dynamic_id", idsDinamicas);
+
+    if (errorIntentos) throw errorIntentos;
+
+    const intentosPorDinamica = new Map(
+      (intentos || []).map(intento => [
+        String(intento.dynamic_id),
+        intento
+      ])
+    );
+
+    let anterioresCompletadas = true;
+
+    dinamicas.forEach(dinamica => {
+      const intento = intentosPorDinamica.get(String(dinamica.id));
+
+      const completada = intento?.status === "completed";
+      const enCurso = intento?.status === "in_progress";
+      const desbloqueada = anterioresCompletadas;
+
       const boton = document.createElement("button");
       boton.className = "btn-principal";
-      boton.textContent = dinamica.title || `Reto ${dinamica.number}`;
+      boton.disabled = !desbloqueada || completada;
 
-      boton.addEventListener("click", () => {
-        iniciarReto(dinamica);
-      });
+      const titulo = dinamica.title || `Reto ${dinamica.number}`;
+
+      if (completada) {
+        boton.textContent =
+          `${titulo} · Completado (${Number(
+            intento.total_points || 0
+          ).toLocaleString("es-CO")} puntos)`;
+
+      } else if (enCurso) {
+        boton.textContent = `${titulo} · Continuar`;
+
+      } else if (!desbloqueada) {
+        boton.textContent = `${titulo} · Bloqueado`;
+
+      } else {
+        boton.textContent = titulo;
+      }
+
+      if (desbloqueada && !completada) {
+        boton.addEventListener("click", () => iniciarReto(dinamica));
+      }
 
       lista.appendChild(boton);
-    });
 
-    if (!data || !data.length) {
-      lista.textContent = "No hay retos activos todavía.";
-    }
+      // La siguiente dinámica requiere completar la anterior.
+      anterioresCompletadas =
+        anterioresCompletadas && completada;
+    });
 
     mostrar("pantalla-dinamicas");
 
@@ -368,8 +420,7 @@ async function cargarDinamicas(semanaId) {
 }
 
 // --------------------------------------------
-// INICIAR RETO - CORREGIDO
-// Evita crear intentos duplicados
+// INICIAR O RECUPERAR RETO
 // --------------------------------------------
 
 async function iniciarReto(dinamica) {
@@ -380,38 +431,12 @@ async function iniciarReto(dinamica) {
   dinamicaActual = dinamica;
 
   try {
-    // Consultar si ya existe un intento para este participante y reto
-    const { data: existente, error: errorConsulta } = await db
-      .from("attempts")
-      .select("id, status, total_points")
-      .eq("participant_id", participanteId)
-      .eq("dynamic_id", dinamica.id)
-      .maybeSingle();
-
-    if (errorConsulta) throw errorConsulta;
-
-    // Si ya terminó, conservar y mostrar su resultado
-    if (existente && existente.status === "completed") {
-      return mensaje(
-        `Ya completaste esta dinámica con ${Number(
-          existente.total_points || 0
-        ).toLocaleString("es-CO")} puntos. Tu resultado está guardado.`
-      );
-    }
-
-    // Si existe un intento sin terminar, evitar duplicarlo
-    if (existente && existente.status === "in_progress") {
-      return mensaje(
-        "Ya tienes un intento iniciado en esta dinámica. Tu progreso está protegido. Contacta al administrador para recuperar este intento."
-      );
-    }
-
     preguntaActual = 0;
     puntosTotales = 0;
     respondiendo = false;
     intentoId = null;
 
-    // Consultar preguntas
+    // Cargar preguntas de la dinámica.
     const { data, error } = await db
       .from("game_questions")
       .select("*")
@@ -426,7 +451,65 @@ async function iniciarReto(dinamica) {
 
     preguntas = data;
 
-    // Crear un intento nuevo únicamente si no existe uno anterior
+    // Buscar si ya existe un intento.
+    const { data: existente, error: errorConsulta } = await db
+      .from("attempts")
+      .select("id, status, total_points")
+      .eq("participant_id", participanteId)
+      .eq("dynamic_id", dinamica.id)
+      .maybeSingle();
+
+    if (errorConsulta) throw errorConsulta;
+
+    // Si ya terminó, no crear otro intento.
+    if (existente && existente.status === "completed") {
+      return mensaje(
+        `Ya completaste esta dinámica con ${Number(
+          existente.total_points || 0
+        ).toLocaleString("es-CO")} puntos. Tu resultado está guardado.`
+      );
+    }
+
+    // Si está en curso, recuperar el progreso.
+    if (existente && existente.status === "in_progress") {
+      intentoId = existente.id;
+
+      const { data: progreso, error: errorProgreso } = await db.rpc(
+        "get_attempt_progress",
+        { p_attempt_id: intentoId }
+      );
+
+      if (errorProgreso) throw errorProgreso;
+
+      puntosTotales = Number(
+        progreso?.total_points ?? existente.total_points ?? 0
+      );
+
+      const respondidas = new Set(
+        (progreso?.answered_question_ids || []).map(String)
+      );
+
+      preguntaActual = preguntas.findIndex(
+        pregunta => !respondidas.has(String(pregunta.id))
+      );
+
+      // Si no quedan preguntas, finalizar el intento.
+      if (preguntaActual === -1) {
+        preguntaActual = preguntas.length;
+        await finalizarReto();
+        return;
+      }
+
+      mensaje(
+        `¡Vamos a continuar! Retomas desde la pregunta ${preguntaActual + 1}.`
+      );
+
+      mostrar("pantalla-juego");
+      mostrarPregunta();
+      return;
+    }
+
+    // Crear intento nuevo si no existe uno anterior.
     const { data: intento, error: errorIntento } = await db
       .from("attempts")
       .insert({
@@ -446,8 +529,8 @@ async function iniciarReto(dinamica) {
     mostrarPregunta();
 
   } catch (error) {
-    console.error("Error al iniciar reto:", error);
-    mensaje("No se pudo iniciar el reto: " + error.message);
+    console.error("Error al iniciar o recuperar reto:", error);
+    mensaje("No se pudo iniciar o recuperar el reto: " + error.message);
   }
 }
 
@@ -526,6 +609,7 @@ async function responder(respuesta) {
   if (respondiendo || temporizador === null) return;
 
   respondiendo = true;
+
   clearInterval(temporizador);
   temporizador = null;
 
@@ -566,6 +650,7 @@ async function responder(respuesta) {
   } catch (error) {
     console.error("Error al guardar respuesta:", error);
     mensaje("No se pudo registrar tu respuesta: " + error.message);
+
     respondiendo = false;
     mostrarPregunta();
   }
@@ -580,18 +665,22 @@ async function finalizarReto() {
   temporizador = null;
 
   try {
-    const { error } = await db
-      .from("attempts")
-      .update({
-        status: "completed",
-        completed_at: new Date().toISOString(),
-        total_points: puntosTotales
-      })
-      .eq("id", intentoId);
+    const { data, error } = await db.rpc("finish_game_attempt", {
+      p_attempt_id: intentoId
+    });
 
     if (error) throw error;
 
+    if (data && data.success === false) {
+      throw new Error(
+        data.message || "No se pudo finalizar el intento."
+      );
+    }
+
+    puntosTotales = Number(data?.total_points ?? puntosTotales);
+
     $("puntuacion-final").textContent = puntosTotales;
+
     $("detalle-puntuacion").textContent =
       "Has terminado todas las preguntas de este reto.";
 
@@ -702,6 +791,7 @@ async function cargarRankingSemanal() {
 
       agregarCelda(fila, i + 1);
       agregarCelda(fila, persona.display_name || "Participante");
+
       agregarCelda(
         fila,
         Number(persona.weekly_points || 0).toLocaleString("es-CO")
@@ -712,6 +802,7 @@ async function cargarRankingSemanal() {
 
   } catch (error) {
     console.error("Error en ranking semanal:", error);
+
     cuerpo.innerHTML =
       '<tr><td colspan="3">No se pudo cargar la clasificación semanal.</td></tr>';
   }
@@ -769,6 +860,7 @@ async function cargarRankingAcumulado() {
 
       agregarCelda(fila, i + 1);
       agregarCelda(fila, persona.display_name || "Participante");
+
       agregarCelda(
         fila,
         Number(persona.cumulative_points || 0).toLocaleString("es-CO")
@@ -779,6 +871,7 @@ async function cargarRankingAcumulado() {
 
   } catch (error) {
     console.error("Error en ranking acumulado:", error);
+
     cuerpo.innerHTML =
       '<tr><td colspan="3">No se pudo cargar la clasificación acumulada.</td></tr>';
   }
