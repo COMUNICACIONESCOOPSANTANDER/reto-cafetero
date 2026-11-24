@@ -1,4 +1,3 @@
-
 // ============================================
 // RETO CAFETERO
 // Registro, inicio de sesión, juego, horarios y ranking
@@ -376,6 +375,7 @@ async function cargarSemanas() {
     semanasDisponibles.forEach(semana => {
       const boton = document.createElement("button");
 
+      boton.type = "button";
       boton.className = "btn-principal";
       boton.textContent = semana.title || `Semana ${semana.id}`;
 
@@ -431,7 +431,6 @@ async function cargarDinamicas(semanaId) {
       return;
     }
 
-    // Consultar los intentos del participante en esta semana.
     const idsDinamicas = dinamicas.map(d => d.id);
 
     const {
@@ -456,19 +455,25 @@ async function cargarDinamicas(semanaId) {
 
     dinamicas.forEach(dinamica => {
       const intento = intentosPorDinamica.get(String(dinamica.id));
+
       const completada = intento?.status === "completed";
       const enCurso = intento?.status === "in_progress";
+
       const horario = obtenerEstadoHorario(dinamica);
       const desbloqueada = anterioresCompletadas;
 
+      const habilitada =
+        desbloqueada &&
+        horario === "abierta" &&
+        !completada;
+
       const boton = document.createElement("button");
+
+      boton.type = "button";
       boton.className = "btn-principal";
 
-      // Se deshabilita únicamente una dinámica ya completada.
-      // Las demás se pueden pulsar para informar por qué aún no abren.
-      boton.disabled = completada;
-
-      const titulo = dinamica.title || `Dinámica ${dinamica.number}`;
+      const titulo =
+        dinamica.title || `Reto ${dinamica.number}`;
 
       if (completada) {
         boton.textContent =
@@ -479,14 +484,14 @@ async function cargarDinamicas(semanaId) {
       } else if (horario === "sin_programacion") {
         boton.textContent = `${titulo} · Sin programación`;
 
-      } else if (horario === "cerrada") {
-        boton.textContent = `${titulo} · Plazo finalizado`;
-
       } else if (horario === "pendiente") {
         boton.textContent =
           `${titulo} · Disponible desde ${formatearFechaColombia(
             dinamica.opens_at
           )}`;
+
+      } else if (horario === "cerrada") {
+        boton.textContent = `${titulo} · Plazo finalizado`;
 
       } else if (!desbloqueada) {
         boton.textContent = `${titulo} · Completa el reto anterior`;
@@ -498,56 +503,64 @@ async function cargarDinamicas(semanaId) {
         boton.textContent = `${titulo} · Disponible`;
       }
 
-      // Todos los retos no completados responden al clic.
-      // iniciarReto vuelve a validar horario y disponibilidad.
-      if (!completada) {
-        boton.addEventListener("click", () => {
-          const estadoActual = obtenerEstadoHorario(dinamica);
+      // El botón permanece pulsable para mostrar el motivo
+      // cuando el reto todavía no se puede iniciar.
+      boton.disabled = false;
 
-          if (estadoActual === "sin_programacion") {
-            mensaje("Este reto todavía no tiene fechas programadas.");
-            return;
-          }
+      boton.addEventListener("click", () => {
+        if (completada) {
+          mensaje(
+            `Ya completaste esta dinámica con ${Number(
+              intento.total_points || 0
+            ).toLocaleString("es-CO")} puntos.`
+          );
+          return;
+        }
 
-          if (estadoActual === "pendiente") {
-            mensaje(
-              `Este reto estará disponible desde el ${formatearFechaColombia(
-                dinamica.opens_at
-              )}.`
-            );
-            return;
-          }
+        if (horario === "sin_programacion") {
+          mensaje("Este reto todavía no tiene fechas programadas.");
+          return;
+        }
 
-          if (estadoActual === "cerrada") {
-            mensaje("El plazo para realizar o recuperar este reto ya terminó.");
-            return;
-          }
+        if (horario === "pendiente") {
+          mensaje(
+            `Este reto estará disponible desde el ${formatearFechaColombia(
+              dinamica.opens_at
+            )}.`
+          );
+          return;
+        }
 
-          if (!desbloqueada) {
-            mensaje(
-              "Este reto está bloqueado. Primero debes completar la dinámica anterior."
-            );
-            return;
-          }
+        if (horario === "cerrada") {
+          mensaje("El plazo para realizar este reto ya terminó.");
+          return;
+        }
 
-          iniciarReto(dinamica);
-        });
-      }
+        if (!desbloqueada) {
+          mensaje("Primero debes completar la dinámica anterior.");
+          return;
+        }
+
+        iniciarReto(dinamica);
+      });
 
       lista.appendChild(boton);
 
-      // La siguiente dinámica requiere completar la anterior.
-      anterioresCompletadas = anterioresCompletadas && completada;
+      anterioresCompletadas =
+        anterioresCompletadas && completada;
     });
 
     mostrar("pantalla-dinamicas");
 
   } catch (error) {
     console.error("Error al cargar dinámicas:", error);
+
     mensaje("No se pudieron cargar los retos: " + error.message);
 
   } finally {
     cargandoDinamicas = false;
+  }
+}    cargandoDinamicas = false;
   }
 }
 
@@ -754,6 +767,7 @@ function mostrarPregunta() {
 
   respuestas.forEach(opcion => {
     const boton = document.createElement("button");
+    boton.type = "button";
 
     boton.className = "btn-principal";
     boton.textContent = opcion;
@@ -926,7 +940,6 @@ function llenarSelectorSemanasRanking() {
 
   semanasDisponibles.forEach(semana => {
     const opcion = document.createElement("option");
-
     opcion.value = semana.id;
     opcion.textContent =
       semana.title || `Semana ${semana.id}`;
@@ -964,13 +977,9 @@ async function cargarClasificacion() {
 
 function agregarCelda(fila, contenido) {
   const celda = document.createElement("td");
-
   celda.textContent = contenido;
-
   fila.appendChild(celda);
-}
-
-// ============================================
+}// ============================================
 // RANKING SEMANAL
 // ============================================
 
@@ -1153,5 +1162,7 @@ $("selector-semana-ranking").addEventListener("change", () => {
 // ============================================
 
 console.log(
+  "RETO CAFETERO: sistema de cuentas, horarios, dinámicas y clasificación cargado."
+);console.log(
   "RETO CAFETERO: sistema de cuentas, horarios, dinámicas y clasificación cargado."
 );
