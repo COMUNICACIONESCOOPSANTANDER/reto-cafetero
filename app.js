@@ -560,8 +560,6 @@ async function cargarDinamicas(semanaId) {
   } finally {
     cargandoDinamicas = false;
   }
-}    cargandoDinamicas = false;
-  }
 }
 
 // ============================================
@@ -979,7 +977,9 @@ function agregarCelda(fila, contenido) {
   const celda = document.createElement("td");
   celda.textContent = contenido;
   fila.appendChild(celda);
-}// ============================================
+}
+
+// ============================================
 // RANKING SEMANAL
 // ============================================
 
@@ -1162,7 +1162,5 @@ $("selector-semana-ranking").addEventListener("change", () => {
 // ============================================
 
 console.log(
-  "RETO CAFETERO: sistema de cuentas, horarios, dinámicas y clasificación cargado."
-);console.log(
   "RETO CAFETERO: sistema de cuentas, horarios, dinámicas y clasificación cargado."
 );
