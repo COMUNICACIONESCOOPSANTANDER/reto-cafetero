@@ -431,7 +431,7 @@ async function cargarDinamicas(semanaId) {
       return;
     }
 
-    // Consultar los intentos del participante.
+    // Consultar los intentos del participante en esta semana.
     const idsDinamicas = dinamicas.map(d => d.id);
 
     const {
@@ -456,26 +456,19 @@ async function cargarDinamicas(semanaId) {
 
     dinamicas.forEach(dinamica => {
       const intento = intentosPorDinamica.get(String(dinamica.id));
-
       const completada = intento?.status === "completed";
       const enCurso = intento?.status === "in_progress";
-
       const horario = obtenerEstadoHorario(dinamica);
-
       const desbloqueada = anterioresCompletadas;
 
-      const habilitada =
-        desbloqueada &&
-        horario === "abierta" &&
-        !completada;
-
       const boton = document.createElement("button");
-
       boton.className = "btn-principal";
-      boton.disabled = !habilitada;
 
-      const titulo =
-        dinamica.title || `Reto ${dinamica.number}`;
+      // Se deshabilita únicamente una dinámica ya completada.
+      // Las demás se pueden pulsar para informar por qué aún no abren.
+      boton.disabled = completada;
+
+      const titulo = dinamica.title || `Dinámica ${dinamica.number}`;
 
       if (completada) {
         boton.textContent =
@@ -486,14 +479,14 @@ async function cargarDinamicas(semanaId) {
       } else if (horario === "sin_programacion") {
         boton.textContent = `${titulo} · Sin programación`;
 
+      } else if (horario === "cerrada") {
+        boton.textContent = `${titulo} · Plazo finalizado`;
+
       } else if (horario === "pendiente") {
         boton.textContent =
           `${titulo} · Disponible desde ${formatearFechaColombia(
             dinamica.opens_at
           )}`;
-
-      } else if (horario === "cerrada") {
-        boton.textContent = `${titulo} · Plazo finalizado`;
 
       } else if (!desbloqueada) {
         boton.textContent = `${titulo} · Completa el reto anterior`;
@@ -505,8 +498,38 @@ async function cargarDinamicas(semanaId) {
         boton.textContent = `${titulo} · Disponible`;
       }
 
-      if (habilitada) {
+      // Todos los retos no completados responden al clic.
+      // iniciarReto vuelve a validar horario y disponibilidad.
+      if (!completada) {
         boton.addEventListener("click", () => {
+          const estadoActual = obtenerEstadoHorario(dinamica);
+
+          if (estadoActual === "sin_programacion") {
+            mensaje("Este reto todavía no tiene fechas programadas.");
+            return;
+          }
+
+          if (estadoActual === "pendiente") {
+            mensaje(
+              `Este reto estará disponible desde el ${formatearFechaColombia(
+                dinamica.opens_at
+              )}.`
+            );
+            return;
+          }
+
+          if (estadoActual === "cerrada") {
+            mensaje("El plazo para realizar o recuperar este reto ya terminó.");
+            return;
+          }
+
+          if (!desbloqueada) {
+            mensaje(
+              "Este reto está bloqueado. Primero debes completar la dinámica anterior."
+            );
+            return;
+          }
+
           iniciarReto(dinamica);
         });
       }
@@ -514,15 +537,13 @@ async function cargarDinamicas(semanaId) {
       lista.appendChild(boton);
 
       // La siguiente dinámica requiere completar la anterior.
-      anterioresCompletadas =
-        anterioresCompletadas && completada;
+      anterioresCompletadas = anterioresCompletadas && completada;
     });
 
     mostrar("pantalla-dinamicas");
 
   } catch (error) {
     console.error("Error al cargar dinámicas:", error);
-
     mensaje("No se pudieron cargar los retos: " + error.message);
 
   } finally {
