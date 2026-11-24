@@ -401,6 +401,23 @@ async function cargarSemanas() {
 }
 
 // ============================================
+// BOTÓN PARA VOLVER A LA LISTA DE SEMANAS
+// ============================================
+
+function agregarBotonVolverSemanas(lista) {
+  const botonVolver = document.createElement("button");
+  botonVolver.type = "button";
+  botonVolver.className = "btn-principal";
+  botonVolver.textContent = "VOLVER A LAS SEMANAS";
+
+  botonVolver.addEventListener("click", () => {
+    cargarSemanas();
+  });
+
+  lista.appendChild(botonVolver);
+}
+
+// ============================================
 // CARGAR DINÁMICAS
 // HORARIOS + DESBLOQUEO SECUENCIAL
 // ============================================
@@ -427,6 +444,7 @@ async function cargarDinamicas(semanaId) {
 
     if (!dinamicas.length) {
       lista.textContent = "No hay retos activos todavía.";
+      agregarBotonVolverSemanas(lista);
       mostrar("pantalla-dinamicas");
       return;
     }
@@ -461,11 +479,6 @@ async function cargarDinamicas(semanaId) {
 
       const horario = obtenerEstadoHorario(dinamica);
       const desbloqueada = anterioresCompletadas;
-
-      const habilitada =
-        desbloqueada &&
-        horario === "abierta" &&
-        !completada;
 
       const boton = document.createElement("button");
 
@@ -550,6 +563,8 @@ async function cargarDinamicas(semanaId) {
         anterioresCompletadas && completada;
     });
 
+    // Permite regresar y elegir cualquiera de las cinco semanas.
+    agregarBotonVolverSemanas(lista);
     mostrar("pantalla-dinamicas");
 
   } catch (error) {
