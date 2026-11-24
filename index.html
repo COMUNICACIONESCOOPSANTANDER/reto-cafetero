@@ -1,1201 +1,186 @@
-// ============================================
-// RETO CAFETERO
-// Registro, inicio de sesión, juego, horarios y ranking
-// Cooperativa de Caficultores de Santander
-// ============================================
-
-const SUPABASE_URL = "https://voqdqsoxlqwplhfjchrz.supabase.co";
-const SUPABASE_KEY = "sb_publishable_NgaynrOUy74BRpZF-6x5kw_HkjhehPz";
-
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-// ============================================
-// VARIABLES GLOBALES
-// ============================================
-
-let participanteId = null;
-let dinamicaActual = null;
-let preguntas = [];
-let preguntaActual = 0;
-let intentoId = null;
-let puntosTotales = 0;
-let inicioPregunta = 0;
-let temporizador = null;
-let segundos = 20;
-let respondiendo = false;
-let pantallaAnteriorClasificacion = "pantalla-semanas";
-let semanasDisponibles = [];
-let cargandoDinamicas = false;
-
-// ============================================
-// ELEMENTOS HTML
-// ============================================
-
-const $ = id => document.getElementById(id);
-
-// ============================================
-// PANTALLAS Y MENSAJES
-// ============================================
-
-function mostrar(pantalla) {
-  document.querySelectorAll(".pantalla").forEach(p => {
-    p.classList.add("oculto");
-  });
-
-  const destino = $(pantalla);
-
-  if (destino) {
-    destino.classList.remove("oculto");
-  }
-}
-
-function mensaje(texto) {
-  alert(texto);
-}
-
-function establecerCarga(formulario, cargando, texto) {
-  const boton = formulario.querySelector('button[type="submit"]');
-
-  if (!boton) return;
-
-  boton.disabled = cargando;
-
-  if (cargando) {
-    boton.dataset.textoOriginal = boton.textContent;
-    boton.textContent = texto;
-  } else {
-    boton.textContent = boton.dataset.textoOriginal || "ENVIAR";
-  }
-}
-
-// ============================================
-// CONTROL DE FECHAS Y HORARIOS
-// Hora oficial: Colombia
-// ============================================
-
-function obtenerEstadoHorario(dinamica) {
-  const ahora = Date.now();
-
-  if (!dinamica.opens_at || !dinamica.closes_at) {
-    return "sin_programacion";
-  }
-
-  const apertura = new Date(dinamica.opens_at).getTime();
-  const cierre = new Date(dinamica.closes_at).getTime();
-
-  if (
-    Number.isNaN(apertura) ||
-    Number.isNaN(cierre)
-  ) {
-    return "sin_programacion";
-  }
-
-  if (ahora < apertura) {
-    return "pendiente";
-  }
-
-  if (ahora > cierre) {
-    return "cerrada";
-  }
-
-  return "abierta";
-}
-
-function formatearFechaColombia(fecha) {
-  if (!fecha) return "";
-
-  return new Intl.DateTimeFormat("es-CO", {
-    timeZone: "America/Bogota",
-    day: "numeric",
-    month: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true
-  }).format(new Date(fecha));
-}
-
-// ============================================
-// USUARIO Y AUTENTICACIÓN
-// ============================================
-
-function crearCorreoInterno(usuario) {
-  return `${usuario.toLowerCase().trim()}@reto-cafetero.com`;
-}
-
-function validarUsuario(usuario) {
-  return /^[a-z0-9._-]{3,24}$/.test(usuario);
-}
-
-async function recuperarParticipante() {
-  const { data, error } = await db.rpc("get_my_participant_id");
-
-  if (error) throw error;
-
-  participanteId = data;
-
-  if (!participanteId) {
-    throw new Error(
-      "La cuenta no tiene un participante asociado. Contacta al administrador."
-    );
-  }
-
-  await cargarSemanas();
-}
-
-// ============================================
-// INICIO
-// ============================================
-
-$("btn-comenzar").addEventListener("click", () => {
-  mostrar("pantalla-login");
-});
-
-$("btn-ir-registro").addEventListener("click", () => {
-  mostrar("pantalla-registro");
-});
-
-$("btn-ir-login").addEventListener("click", () => {
-  mostrar("pantalla-login");
-});
-
-// ============================================
-// CREAR CUENTA
-// ============================================
-
-$("form-registro").addEventListener("submit", async e => {
-  e.preventDefault();
-
-  const formulario = e.target;
-  const nombre = $("nombre-completo").value.trim();
-  const usuario = $("usuario-registro").value.trim().toLowerCase();
-  const contrasena = $("contrasena-registro").value;
-
-  if (nombre.length < 3) {
-    return mensaje("Escribe tu nombre completo.");
-  }
-
-  if (!validarUsuario(usuario)) {
-    return mensaje(
-      "El usuario debe tener entre 3 y 24 caracteres. Usa letras sin tildes, números, punto, guion o guion bajo."
-    );
-  }
-
-  if (contrasena.length < 8) {
-    return mensaje("La contraseña debe tener mínimo 8 caracteres.");
-  }
-
-  establecerCarga(formulario, true, "CREANDO CUENTA...");
-
-  try {
-    const correoInterno = crearCorreoInterno(usuario);
-
-    const { data, error } = await db.auth.signUp({
-      email: correoInterno,
-      password: contrasena,
-      options: {
-        data: {
-          username: usuario,
-          display_name: nombre
-        }
-      }
-    });
-
-    if (error) throw error;
-
-    if (!data.session) {
-      throw new Error(
-        "La cuenta se creó, pero no se inició sesión. Verifica que la confirmación de correo esté desactivada en Supabase."
-      );
-    }
-
-    const {
-      data: idParticipante,
-      error: errorRegistro
-    } = await db.rpc("register_participant", {
-      p_username: usuario,
-      p_display_name: nombre
-    });
-
-    if (errorRegistro) throw errorRegistro;
-
-    participanteId = idParticipante;
-
-    mensaje(
-      "¡Tu cuenta fue creada correctamente! Bienvenido al RETO CAFETERO."
-    );
-
-    formulario.reset();
-
-    await cargarSemanas();
-
-  } catch (error) {
-    console.error("Error al crear cuenta:", error);
-
-    const detalle = error.message?.toLowerCase() || "";
-
-    if (
-      detalle.includes("already registered") ||
-      detalle.includes("already been registered")
-    ) {
-      mensaje("Ese nombre de usuario ya está registrado. Elige otro.");
-
-    } else if (
-      detalle.includes("duplicate key") ||
-      detalle.includes("unique constraint")
-    ) {
-      mensaje("Ese nombre de usuario ya existe. Elige otro.");
-
-    } else {
-      mensaje("No se pudo crear la cuenta: " + error.message);
-    }
-
-  } finally {
-    establecerCarga(formulario, false);
-  }
-});
-
-// ============================================
-// INICIAR SESIÓN
-// ============================================
-
-$("form-login").addEventListener("submit", async e => {
-  e.preventDefault();
-
-  const formulario = e.target;
-  const usuario = $("usuario-login").value.trim().toLowerCase();
-  const contrasena = $("contrasena-login").value;
-
-  if (!validarUsuario(usuario)) {
-    return mensaje("Escribe un nombre de usuario válido.");
-  }
-
-  establecerCarga(formulario, true, "INGRESANDO...");
-
-  try {
-    const correoInterno = crearCorreoInterno(usuario);
-
-    const { error } = await db.auth.signInWithPassword({
-      email: correoInterno,
-      password: contrasena
-    });
-
-    if (error) throw error;
-
-    await recuperarParticipante();
-
-    formulario.reset();
-
-  } catch (error) {
-    console.error("Error al iniciar sesión:", error);
-
-    if (
-      error.message?.toLowerCase().includes("invalid login credentials")
-    ) {
-      mensaje("Usuario o contraseña incorrectos.");
-    } else {
-      mensaje("No se pudo iniciar sesión: " + error.message);
-    }
-
-  } finally {
-    establecerCarga(formulario, false);
-  }
-});
-
-// ============================================
-// RECUPERAR SESIÓN AL VOLVER A LA APLICACIÓN
-// ============================================
-
-async function comprobarSesion() {
-  try {
-    const { data, error } = await db.auth.getSession();
-
-    if (error) throw error;
-
-    if (data.session) {
-      await recuperarParticipante();
-    } else {
-      mostrar("pantalla-inicio");
-    }
-
-  } catch (error) {
-    console.error("Error al recuperar sesión:", error);
-    mostrar("pantalla-inicio");
-  }
-}
-
-comprobarSesion();
-
-// ============================================
-// CERRAR SESIÓN
-// ============================================
-
-$("btn-cerrar-sesion").addEventListener("click", async () => {
-  const confirmar = confirm("¿Quieres cerrar tu sesión?");
-
-  if (!confirmar) return;
-
-  clearInterval(temporizador);
-  temporizador = null;
-
-  const { error } = await db.auth.signOut();
-
-  if (error) {
-    mensaje("No se pudo cerrar la sesión: " + error.message);
-    return;
-  }
-
-  participanteId = null;
-  intentoId = null;
-  dinamicaActual = null;
-  preguntas = [];
-  preguntaActual = 0;
-  puntosTotales = 0;
-
-  mostrar("pantalla-inicio");
-});
-
-// ============================================
-// CARGAR SEMANAS
-// CORRECCIÓN DE NAVEGACIÓN
-// ============================================
-
-async function cargarSemanas() {
-  const lista = $("lista-semanas");
-
-  // Mostrar inmediatamente la pantalla de semanas.
-  mostrar("pantalla-semanas");
-
-  // Mensaje temporal mientras se consultan los datos.
-  lista.innerHTML = "Cargando semanas...";
-
-  try {
-    const { data, error } = await db
-      .from("weeks")
-      .select("*")
-      .order("id", { ascending: true });
-
-    if (error) throw error;
-
-    semanasDisponibles = data || [];
-
-    // Limpiar la lista antes de volver a crear los botones.
-    lista.innerHTML = "";
-
-    if (semanasDisponibles.length === 0) {
-      lista.textContent = "Todavía no hay semanas disponibles.";
-    } else {
-      semanasDisponibles.forEach(semana => {
-        const boton = document.createElement("button");
-
-        boton.type = "button";
-        boton.className = "btn-principal";
-        boton.textContent = semana.title || `Semana ${semana.id}`;
-
-        boton.addEventListener("click", () => {
-          cargarDinamicas(semana.id);
-        });
-
-        lista.appendChild(boton);
-      });
-    }
-
-    llenarSelectorSemanasRanking();
-
-  } catch (error) {
-    console.error("Error al cargar semanas:", error);
-
-    lista.textContent = "No se pudieron cargar las semanas. Intenta nuevamente.";
-
-    mensaje("Error al cargar las semanas: " + error.message);
-  }
-}
-
-// ============================================
-// BOTÓN PARA VOLVER A LA LISTA DE SEMANAS
-// ============================================
-
-function agregarBotonVolverSemanas(lista) {
-  const botonVolver = document.createElement("button");
-
-  botonVolver.type = "button";
-  botonVolver.className = "btn-principal";
-  botonVolver.textContent = "VOLVER A LAS SEMANAS";
-
-  botonVolver.addEventListener("click", async function(e) {
-    e.preventDefault();
-
-    await cargarSemanas();
-  });
-
-  lista.appendChild(botonVolver);
-}
-
-// ============================================
-// CARGAR DINÁMICAS
-// HORARIOS + DESBLOQUEO SECUENCIAL
-// ============================================
-
-async function cargarDinamicas(semanaId) {
-  if (cargandoDinamicas) return;
-
-  cargandoDinamicas = true;
-
-  try {
-    const { data, error } = await db
-      .from("dynamics")
-      .select("*")
-      .eq("week_id", semanaId)
-      .eq("is_active", true)
-      .order("number");
-
-    if (error) throw error;
-
-    const lista = $("lista-dinamicas");
-    lista.innerHTML = "";
-
-    const dinamicas = data || [];
-
-    if (!dinamicas.length) {
-      lista.textContent = "No hay retos activos todavía.";
-      agregarBotonVolverSemanas(lista);
-      mostrar("pantalla-dinamicas");
-      return;
-    }
-
-    const idsDinamicas = dinamicas.map(d => d.id);
-
-    const {
-      data: intentos,
-      error: errorIntentos
-    } = await db
-      .from("attempts")
-      .select("dynamic_id, status, total_points")
-      .eq("participant_id", participanteId)
-      .in("dynamic_id", idsDinamicas);
-
-    if (errorIntentos) throw errorIntentos;
-
-    const intentosPorDinamica = new Map(
-      (intentos || []).map(intento => [
-        String(intento.dynamic_id),
-        intento
-      ])
-    );
-
-    let anterioresCompletadas = true;
-
-    dinamicas.forEach(dinamica => {
-      const intento = intentosPorDinamica.get(String(dinamica.id));
-
-      const completada = intento?.status === "completed";
-      const enCurso = intento?.status === "in_progress";
-
-      const horario = obtenerEstadoHorario(dinamica);
-      const desbloqueada = anterioresCompletadas;
-
-      const boton = document.createElement("button");
-
-      boton.type = "button";
-      boton.className = "btn-principal";
-
-      const titulo =
-        dinamica.title || `Reto ${dinamica.number}`;
-
-      if (completada) {
-        boton.textContent =
-          `${titulo} · Completado (${Number(
-            intento.total_points || 0
-          ).toLocaleString("es-CO")} puntos)`;
-
-      } else if (horario === "sin_programacion") {
-        boton.textContent = `${titulo} · Sin programación`;
-
-      } else if (horario === "pendiente") {
-        boton.textContent =
-          `${titulo} · Disponible desde ${formatearFechaColombia(
-            dinamica.opens_at
-          )}`;
-
-      } else if (horario === "cerrada") {
-        boton.textContent = `${titulo} · Plazo finalizado`;
-
-      } else if (!desbloqueada) {
-        boton.textContent = `${titulo} · Completa el reto anterior`;
-
-      } else if (enCurso) {
-        boton.textContent = `${titulo} · Continuar`;
-
-      } else {
-        boton.textContent = `${titulo} · Disponible`;
-      }
-
-      // El botón permanece pulsable para mostrar el motivo
-      // cuando el reto todavía no se puede iniciar.
-      boton.disabled = false;
-
-      boton.addEventListener("click", () => {
-        if (completada) {
-          mensaje(
-            `Ya completaste esta dinámica con ${Number(
-              intento.total_points || 0
-            ).toLocaleString("es-CO")} puntos.`
-          );
-          return;
-        }
-
-        if (horario === "sin_programacion") {
-          mensaje("Este reto todavía no tiene fechas programadas.");
-          return;
-        }
-
-        if (horario === "pendiente") {
-          mensaje(
-            `Este reto estará disponible desde el ${formatearFechaColombia(
-              dinamica.opens_at
-            )}.`
-          );
-          return;
-        }
-
-        if (horario === "cerrada") {
-          mensaje("El plazo para realizar este reto ya terminó.");
-          return;
-        }
-
-        if (!desbloqueada) {
-          mensaje("Primero debes completar la dinámica anterior.");
-          return;
-        }
-
-        iniciarReto(dinamica);
-      });
-
-      lista.appendChild(boton);
-
-      anterioresCompletadas =
-        anterioresCompletadas && completada;
-    });
-
-    // Permite regresar y elegir cualquiera de las cinco semanas.
-    agregarBotonVolverSemanas(lista);
-
-    mostrar("pantalla-dinamicas");
-
-  } catch (error) {
-    console.error("Error al cargar dinámicas:", error);
-
-    mensaje("No se pudieron cargar los retos: " + error.message);
-
-  } finally {
-    cargandoDinamicas = false;
-  }
-}
-
-// ============================================
-// INICIAR O RECUPERAR RETO
-// ============================================
-
-async function iniciarReto(dinamica) {
-  if (!participanteId) {
-    return mensaje("Debes iniciar sesión nuevamente.");
-  }
-
-  // Comprobar el horario antes de iniciar o recuperar.
-  const estadoHorario = obtenerEstadoHorario(dinamica);
-
-  if (estadoHorario === "pendiente") {
-    return mensaje(
-      `Este reto estará disponible desde el ${formatearFechaColombia(
-        dinamica.opens_at
-      )}.`
-    );
-  }
-
-  if (estadoHorario === "cerrada") {
-    return mensaje(
-      "El plazo para realizar o recuperar este reto ya terminó."
-    );
-  }
-
-  if (estadoHorario === "sin_programacion") {
-    return mensaje(
-      "Este reto todavía no tiene fechas programadas."
-    );
-  }
-
-  dinamicaActual = dinamica;
-
-  try {
-    preguntaActual = 0;
-    puntosTotales = 0;
-    respondiendo = false;
-    intentoId = null;
-
-    clearInterval(temporizador);
-    temporizador = null;
-
-    // Cargar preguntas de la dinámica.
-    const { data, error } = await db
-      .from("game_questions")
-      .select("*")
-      .eq("dynamic_id", dinamica.id)
-      .order("number");
-
-    if (error) throw error;
-
-    if (!data || !data.length) {
-      return mensaje("Este reto todavía no tiene preguntas.");
-    }
-
-    preguntas = data;
-
-    // Buscar si ya existe un intento.
-    const {
-      data: existente,
-      error: errorConsulta
-    } = await db
-      .from("attempts")
-      .select("id, status, total_points")
-      .eq("participant_id", participanteId)
-      .eq("dynamic_id", dinamica.id)
-      .maybeSingle();
-
-    if (errorConsulta) throw errorConsulta;
-
-    // Si ya terminó, no crear otro intento.
-    if (existente && existente.status === "completed") {
-      return mensaje(
-        `Ya completaste esta dinámica con ${Number(
-          existente.total_points || 0
-        ).toLocaleString("es-CO")} puntos. Tu resultado está guardado.`
-      );
-    }
-
-    // Si está en curso, recuperar el progreso.
-    if (existente && existente.status === "in_progress") {
-      intentoId = existente.id;
-
-      const {
-        data: progreso,
-        error: errorProgreso
-      } = await db.rpc(
-        "get_attempt_progress",
-        { p_attempt_id: intentoId }
-      );
-
-      if (errorProgreso) throw errorProgreso;
-
-      puntosTotales = Number(
-        progreso?.total_points ?? existente.total_points ?? 0
-      );
-
-      const respondidas = new Set(
-        (progreso?.answered_question_ids || []).map(String)
-      );
-
-      preguntaActual = preguntas.findIndex(
-        pregunta => !respondidas.has(String(pregunta.id))
-      );
-
-      // Si no quedan preguntas, finalizar el intento.
-      if (preguntaActual === -1) {
-        preguntaActual = preguntas.length;
-        await finalizarReto();
-        return;
-      }
-
-      mensaje(
-        `¡Vamos a continuar! Retomas desde la pregunta ${preguntaActual + 1}.`
-      );
-
-      mostrar("pantalla-juego");
-      mostrarPregunta();
-
-      return;
-    }
-
-    // Crear intento nuevo.
-    const {
-      data: intento,
-      error: errorIntento
-    } = await db
-      .from("attempts")
-      .insert({
-        participant_id: participanteId,
-        dynamic_id: dinamica.id,
-        status: "in_progress",
-        total_points: 0
-      })
-      .select("id")
-      .single();
-
-    if (errorIntento) throw errorIntento;
-
-    intentoId = intento.id;
-
-    mostrar("pantalla-juego");
-    mostrarPregunta();
-
-  } catch (error) {
-    console.error("Error al iniciar o recuperar reto:", error);
-
-    mensaje(
-      "No se pudo iniciar o recuperar el reto: " + error.message
-    );
-  }
-}
-
-// ============================================
-// MOSTRAR PREGUNTAS
-// ============================================
-
-function mostrarPregunta() {
-  clearInterval(temporizador);
-  temporizador = null;
-  respondiendo = false;
-
-  if (preguntaActual >= preguntas.length) {
-    finalizarReto();
-    return;
-  }
-
-  const pregunta = preguntas[preguntaActual];
-
-  segundos = pregunta.time_limit_seconds || 20;
-  inicioPregunta = Date.now();
-
-  $("numero-pregunta").textContent =
-    `Pregunta ${preguntaActual + 1} de ${preguntas.length}`;
-
-  $("cronometro").textContent = segundos;
-  $("puntos").textContent = `${puntosTotales} puntos`;
-  $("enunciado-pregunta").textContent = pregunta.prompt;
-  $("mensaje-respuesta").textContent = "";
-
-  $("barra-progreso").style.width =
-    `${(preguntaActual / preguntas.length) * 100}%`;
-
-  const opciones = $("opciones-respuesta");
-  opciones.innerHTML = "";
-
-  let respuestas = pregunta.options || [];
-
-  if (typeof respuestas === "string") {
-    try {
-      respuestas = JSON.parse(respuestas);
-    } catch {
-      respuestas = respuestas.split(",");
-    }
-  }
-
-  if (!Array.isArray(respuestas)) {
-    respuestas = [];
-  }
-
-  respuestas.forEach(opcion => {
-    const boton = document.createElement("button");
-    boton.type = "button";
-
-    boton.className = "btn-principal";
-    boton.textContent = opcion;
-
-    boton.addEventListener("click", () => {
-      responder(opcion);
-    });
-
-    opciones.appendChild(boton);
-  });
-
-  temporizador = setInterval(() => {
-    segundos--;
-
-    $("cronometro").textContent = segundos;
-
-    if (segundos <= 0) {
-      responder(null);
-    }
-  }, 1000);
-}
-
-// ============================================
-// REGISTRAR RESPUESTA Y PUNTOS
-// ============================================
-
-async function responder(respuesta) {
-  if (respondiendo || temporizador === null) return;
-
-  respondiendo = true;
-
-  clearInterval(temporizador);
-  temporizador = null;
-
-  const pregunta = preguntas[preguntaActual];
-
-  const tiempoMs = Math.min(
-    Date.now() - inicioPregunta,
-    20000
-  );
-
-  $("opciones-respuesta")
-    .querySelectorAll("button")
-    .forEach(boton => {
-      boton.disabled = true;
-    });
-
-  try {
-    const { data, error } = await db.rpc(
-      "submit_game_answer",
-      {
-        p_attempt_id: intentoId,
-        p_question_id: pregunta.id,
-        p_answer: respuesta === null ? "" : String(respuesta),
-        p_response_time_ms: tiempoMs
-      }
-    );
-
-    if (error) throw error;
-
-    const resultado = data || {};
-
-    const puntosGanados = Number(
-      resultado.points_awarded || 0
-    );
-
-    puntosTotales = Number(
-      resultado.total_points ??
-      (puntosTotales + puntosGanados)
-    );
-
-    $("puntos").textContent =
-      `${puntosTotales} puntos`;
-
-    $("mensaje-respuesta").textContent =
-      resultado.is_correct
-        ? `¡Correcto! +${puntosGanados} puntos`
-        : "Respuesta incorrecta.";
-
-    preguntaActual++;
-
-    setTimeout(mostrarPregunta, 1200);
-
-  } catch (error) {
-    console.error("Error al guardar respuesta:", error);
-
-    mensaje(
-      "No se pudo registrar tu respuesta: " + error.message
-    );
-
-    // Se vuelve a mostrar la pregunta si el servidor
-    // no pudo guardar la respuesta.
-    respondiendo = false;
-    mostrarPregunta();
-  }
-}
-
-// ============================================
-// FINALIZAR RETO
-// ============================================
-
-async function finalizarReto() {
-  clearInterval(temporizador);
-  temporizador = null;
-
-  if (!intentoId) {
-    return mensaje("No se encontró el intento que deseas finalizar.");
-  }
-
-  try {
-    const { data, error } = await db.rpc(
-      "finish_game_attempt",
-      {
-        p_attempt_id: intentoId
-      }
-    );
-
-    if (error) throw error;
-
-    if (data && data.success === false) {
-      throw new Error(
-        data.message || "No se pudo finalizar el intento."
-      );
-    }
-
-    puntosTotales = Number(
-      data?.total_points ?? puntosTotales
-    );
-
-    $("puntuacion-final").textContent = puntosTotales;
-
-    $("detalle-puntuacion").textContent =
-      "Has terminado todas las preguntas de este reto.";
-
-    $("barra-progreso").style.width = "100%";
-
-    mostrar("pantalla-resultados");
-
-  } catch (error) {
-    console.error("Error al finalizar:", error);
-
-    mensaje(
-      "No se pudieron guardar los resultados: " + error.message
-    );
-  }
-}
-
-// ============================================
-// CONTINUAR DESPUÉS DE LOS RESULTADOS
-// ============================================
-
-$("btn-continuar").addEventListener("click", () => {
-  if (dinamicaActual) {
-    cargarDinamicas(dinamicaActual.week_id);
-  }
-});
-
-// ============================================
-// CLASIFICACIÓN
-// ============================================
-
-function llenarSelectorSemanasRanking() {
-  const selector = $("selector-semana-ranking");
-
-  if (!selector) return;
-
-  const valorAnterior = selector.value;
-
-  selector.innerHTML = "";
-
-  semanasDisponibles.forEach(semana => {
-    const opcion = document.createElement("option");
-    opcion.value = semana.id;
-    opcion.textContent =
-      semana.title || `Semana ${semana.id}`;
-
-    selector.appendChild(opcion);
-  });
-
-  if (
-    valorAnterior &&
-    semanasDisponibles.some(
-      s => String(s.id) === valorAnterior
-    )
-  ) {
-    selector.value = valorAnterior;
-  }
-}
-
-function abrirClasificacion(origen) {
-  pantallaAnteriorClasificacion =
-    origen || "pantalla-semanas";
-
-  llenarSelectorSemanasRanking();
-
-  mostrar("pantalla-clasificacion");
-
-  cargarClasificacion();
-}
-
-async function cargarClasificacion() {
-  await Promise.all([
-    cargarRankingSemanal(),
-    cargarRankingAcumulado()
-  ]);
-}
-
-function agregarCelda(fila, contenido) {
-  const celda = document.createElement("td");
-  celda.textContent = contenido;
-  fila.appendChild(celda);
-}
-
-// ============================================
-// RANKING SEMANAL
-// ============================================
-
-async function cargarRankingSemanal() {
-  const cuerpo = $("ranking-semanal");
-  const selector = $("selector-semana-ranking");
-
-  if (!cuerpo || !selector) return;
-
-  cuerpo.innerHTML =
-    '<tr><td colspan="3">Cargando clasificación...</td></tr>';
-
-  try {
-    if (!selector.value) {
-      cuerpo.innerHTML =
-        '<tr><td colspan="3">Selecciona una semana.</td></tr>';
-
-      return;
-    }
-
-    const { data, error } = await db
-      .from("leaderboard")
-      .select(
-        "participant_id, display_name, weekly_points"
-      )
-      .eq("week_id", selector.value)
-      .order("weekly_points", {
-        ascending: false
-      });
-
-    if (error) throw error;
-
-    cuerpo.innerHTML = "";
-
-    if (!data || !data.length) {
-      cuerpo.innerHTML =
-        '<tr><td colspan="3">Aún no hay participantes con puntos en esta semana.</td></tr>';
-
-      return;
-    }
-
-    data.forEach((persona, i) => {
-      const fila = document.createElement("tr");
-
-      agregarCelda(fila, i + 1);
-
-      agregarCelda(
-        fila,
-        persona.display_name || "Participante"
-      );
-
-      agregarCelda(
-        fila,
-        Number(
-          persona.weekly_points || 0
-        ).toLocaleString("es-CO")
-      );
-
-      cuerpo.appendChild(fila);
-    });
-
-  } catch (error) {
-    console.error("Error en ranking semanal:", error);
-
-    cuerpo.innerHTML =
-      '<tr><td colspan="3">No se pudo cargar la clasificación semanal.</td></tr>';
-  }
-}
-
-// ============================================
-// RANKING ACUMULADO
-// ============================================
-
-async function cargarRankingAcumulado() {
-  const cuerpo = $("ranking-acumulado");
-
-  if (!cuerpo) return;
-
-  cuerpo.innerHTML =
-    '<tr><td colspan="3">Cargando clasificación...</td></tr>';
-
-  try {
-    const { data, error } = await db
-      .from("leaderboard")
-      .select(
-        "participant_id, display_name, cumulative_points"
-      )
-      .order("cumulative_points", {
-        ascending: false
-      });
-
-    if (error) throw error;
-
-    const unicos = new Map();
-
-    (data || []).forEach(persona => {
-      const anterior = unicos.get(
-        persona.participant_id
-      );
-
-      if (
-        !anterior ||
-        Number(persona.cumulative_points || 0) >
-        Number(anterior.cumulative_points || 0)
-      ) {
-        unicos.set(
-          persona.participant_id,
-          persona
-        );
-      }
-    });
-
-    const ordenados = Array.from(
-      unicos.values()
-    ).sort(
-      (a, b) =>
-        Number(b.cumulative_points || 0) -
-        Number(a.cumulative_points || 0)
-    );
-
-    cuerpo.innerHTML = "";
-
-    if (!ordenados.length) {
-      cuerpo.innerHTML =
-        '<tr><td colspan="3">Aún no hay puntuaciones acumuladas.</td></tr>';
-
-      return;
-    }
-
-    ordenados.forEach((persona, i) => {
-      const fila = document.createElement("tr");
-
-      agregarCelda(fila, i + 1);
-
-      agregarCelda(
-        fila,
-        persona.display_name || "Participante"
-      );
-
-      agregarCelda(
-        fila,
-        Number(
-          persona.cumulative_points || 0
-        ).toLocaleString("es-CO")
-      );
-
-      cuerpo.appendChild(fila);
-    });
-
-  } catch (error) {
-    console.error("Error en ranking acumulado:", error);
-
-    cuerpo.innerHTML =
-      '<tr><td colspan="3">No se pudo cargar la clasificación acumulada.</td></tr>';
-  }
-}
-
-// ============================================
-// BOTONES DE CLASIFICACIÓN
-// ============================================
-
-$("btn-ver-clasificacion").addEventListener("click", () => {
-  abrirClasificacion("pantalla-semanas");
-});
-
-$("btn-clasificacion-dinamicas").addEventListener("click", () => {
-  abrirClasificacion("pantalla-dinamicas");
-});
-
-// CORRECCIÓN: VOLVER SIEMPRE A LAS CINCO SEMANAS
-
-$("btn-volver-clasificacion").onclick = async function(e) {
-  e.preventDefault();
-
-  mostrar("pantalla-semanas");
-
-  await cargarSemanas();
-};
-
-$("selector-semana-ranking").addEventListener("change", () => {
-  cargarRankingSemanal();
-});
-
-// ============================================
-// MENSAJE DE INICIO
-// ============================================
-
-console.log(
-  "RETO CAFETERO: sistema de cuentas, horarios, dinámicas y clasificación cargado."
-);
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#173D2A">
+  <title>RETO CAFETERO | Cooperativa de Caficultores de Santander</title>
+  <meta name="description" content="Plataforma de retos y conocimientos de la Cooperativa de Caficultores de Santander.">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div id="app">
+
+  <header class="encabezado">
+    <div class="marca">
+      <span class="marca-icono">☕</span>
+      <div>
+        <h1>RETO CAFETERO</h1>
+        <p>Cooperativa de Caficultores de Santander</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="contenedor">
+
+    <section id="pantalla-inicio" class="pantalla">
+      <div class="bienvenida">
+        <span class="etiqueta">APRENDE · PARTICIPA · GANA</span>
+        <h2>¡Bienvenido al<br>RETO CAFETERO!</h2>
+        <p>Pon a prueba tus conocimientos, demuestra tu agilidad y descubre cuánto sabes de nuestra Cooperativa.</p>
+        <button id="btn-comenzar" class="btn-principal">COMENZAR</button>
+      </div>
+    </section>
+
+    <section id="pantalla-registro" class="pantalla oculto">
+      <h2>Crear cuenta</h2>
+      <p>Regístrate para participar en el RETO CAFETERO.</p>
+
+      <form id="form-registro">
+        <label for="nombre-completo">Nombre completo</label>
+        <input type="text" id="nombre-completo" placeholder="Escribe tu nombre completo" required>
+
+        <label for="usuario-registro">Nombre de usuario</label>
+        <input type="text" id="usuario-registro" placeholder="Ej. mafecita" minlength="3" maxlength="24" required>
+        <small>Usa letras sin tildes, números, punto, guion o guion bajo.</small>
+
+        <label for="contrasena-registro">Contraseña</label>
+        <input type="password" id="contrasena-registro" placeholder="Mínimo 8 caracteres" minlength="8" required>
+
+        <button type="submit" class="btn-principal">CREAR MI CUENTA</button>
+      </form>
+
+      <p>¿Ya tienes cuenta?</p>
+      <button id="btn-ir-login" class="btn-principal">INICIAR SESIÓN</button>
+    </section>
+
+    <section id="pantalla-login" class="pantalla oculto">
+      <h2>Iniciar sesión</h2>
+      <p>Ingresa con tu usuario y contraseña.</p>
+
+      <form id="form-login">
+        <label for="usuario-login">Nombre de usuario</label>
+        <input type="text" id="usuario-login" placeholder="Tu nombre de usuario" required>
+
+        <label for="contrasena-login">Contraseña</label>
+        <input type="password" id="contrasena-login" placeholder="Tu contraseña" required>
+
+        <button type="submit" class="btn-principal">INGRESAR</button>
+      </form>
+
+      <p>¿Aún no tienes cuenta?</p>
+      <button id="btn-ir-registro" class="btn-principal">CREAR CUENTA</button>
+    </section>
+
+    <section id="pantalla-semanas" class="pantalla oculto">
+      <h2>Selecciona tu semana</h2>
+      <p>Elige el desafío que deseas realizar.</p>
+
+      <div id="lista-semanas" class="lista-semanas"></div>
+
+      <button id="btn-ver-clasificacion" class="btn-principal">VER CLASIFICACIÓN</button>
+      <button id="btn-cerrar-sesion" class="btn-principal">CERRAR SESIÓN</button>
+    </section>
+
+    <section id="pantalla-dinamicas" class="pantalla oculto">
+      <h2>Selecciona tu reto</h2>
+
+      <div id="lista-dinamicas"></div>
+
+      <button id="btn-clasificacion-dinamicas" class="btn-principal">VER CLASIFICACIÓN</button>
+    </section>
+
+    <section id="pantalla-juego" class="pantalla oculto">
+      <div class="informacion-juego">
+        <span id="numero-pregunta">Pregunta 1</span>
+        <span id="cronometro">20</span>
+        <span id="puntos">0 puntos</span>
+      </div>
+
+      <div class="progreso">
+        <div id="barra-progreso"></div>
+      </div>
+
+      <h2 id="enunciado-pregunta">Cargando pregunta...</h2>
+      <div id="opciones-respuesta"></div>
+      <p id="mensaje-respuesta"></p>
+    </section>
+
+    <section id="pantalla-resultados" class="pantalla oculto">
+      <div class="resultado-final">
+        <span class="trofeo">🏆</span>
+        <h2>¡Reto completado!</h2>
+        <p>Tu puntuación final es:</p>
+        <strong id="puntuacion-final">0</strong>
+        <p id="detalle-puntuacion"></p>
+        <button id="btn-continuar" class="btn-principal">CONTINUAR</button>
+      </div>
+    </section>
+
+    <section id="pantalla-clasificacion" class="pantalla oculto">
+      <h2>🏆 Clasificación</h2>
+      <p>Descubre quiénes lideran el RETO CAFETERO.</p>
+
+      <div class="bloque-clasificacion">
+        <h3>Ranking semanal</h3>
+        <label for="selector-semana-ranking">Selecciona una semana:</label>
+        <select id="selector-semana-ranking"></select>
+
+        <div class="tabla-contenedor">
+          <table>
+            <thead>
+              <tr>
+                <th>Posición</th>
+                <th>Participante</th>
+                <th>Puntos</th>
+              </tr>
+            </thead>
+            <tbody id="ranking-semanal">
+              <tr>
+                <td colspan="3">Cargando clasificación...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="bloque-clasificacion">
+        <h3>Ranking acumulado</h3>
+        <p>Los participantes con mayor puntuación total.</p>
+
+        <div class="tabla-contenedor">
+          <table>
+            <thead>
+              <tr>
+                <th>Posición</th>
+                <th>Participante</th>
+                <th>Puntos acumulados</th>
+              </tr>
+            </thead>
+            <tbody id="ranking-acumulado">
+              <tr>
+                <td colspan="3">Cargando clasificación...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <button id="btn-volver-clasificacion" class="btn-principal">
+        VOLVER A LAS SEMANAS
+      </button>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>Cooperativa de Caficultores de Santander</p>
+    <p>RETO CAFETERO © 2026</p>
+  </footer>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
