@@ -1,13 +1,18 @@
 
 // ============================================
 // RETO CAFETERO
-// Registro, inicio de sesión, juego y ranking
+// Registro, inicio de sesión, juego, horarios y ranking
+// Cooperativa de Caficultores de Santander
 // ============================================
 
 const SUPABASE_URL = "https://voqdqsoxlqwplhfjchrz.supabase.co";
 const SUPABASE_KEY = "sb_publishable_NgaynrOUy74BRpZF-6x5kw_HkjhehPz";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ============================================
+// VARIABLES GLOBALES
+// ============================================
 
 let participanteId = null;
 let dinamicaActual = null;
@@ -21,12 +26,17 @@ let segundos = 20;
 let respondiendo = false;
 let pantallaAnteriorClasificacion = "pantalla-semanas";
 let semanasDisponibles = [];
+let cargandoDinamicas = false;
+
+// ============================================
+// ELEMENTOS HTML
+// ============================================
 
 const $ = id => document.getElementById(id);
 
-// --------------------------------------------
+// ============================================
 // PANTALLAS Y MENSAJES
-// --------------------------------------------
+// ============================================
 
 function mostrar(pantalla) {
   document.querySelectorAll(".pantalla").forEach(p => {
@@ -34,7 +44,10 @@ function mostrar(pantalla) {
   });
 
   const destino = $(pantalla);
-  if (destino) destino.classList.remove("oculto");
+
+  if (destino) {
+    destino.classList.remove("oculto");
+  }
 }
 
 function mensaje(texto) {
@@ -43,6 +56,7 @@ function mensaje(texto) {
 
 function establecerCarga(formulario, cargando, texto) {
   const boton = formulario.querySelector('button[type="submit"]');
+
   if (!boton) return;
 
   boton.disabled = cargando;
@@ -55,9 +69,55 @@ function establecerCarga(formulario, cargando, texto) {
   }
 }
 
-// --------------------------------------------
+// ============================================
+// CONTROL DE FECHAS Y HORARIOS
+// Hora oficial: Colombia
+// ============================================
+
+function obtenerEstadoHorario(dinamica) {
+  const ahora = Date.now();
+
+  if (!dinamica.opens_at || !dinamica.closes_at) {
+    return "sin_programacion";
+  }
+
+  const apertura = new Date(dinamica.opens_at).getTime();
+  const cierre = new Date(dinamica.closes_at).getTime();
+
+  if (
+    Number.isNaN(apertura) ||
+    Number.isNaN(cierre)
+  ) {
+    return "sin_programacion";
+  }
+
+  if (ahora < apertura) {
+    return "pendiente";
+  }
+
+  if (ahora > cierre) {
+    return "cerrada";
+  }
+
+  return "abierta";
+}
+
+function formatearFechaColombia(fecha) {
+  if (!fecha) return "";
+
+  return new Intl.DateTimeFormat("es-CO", {
+    timeZone: "America/Bogota",
+    day: "numeric",
+    month: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  }).format(new Date(fecha));
+}
+
+// ============================================
 // USUARIO Y AUTENTICACIÓN
-// --------------------------------------------
+// ============================================
 
 function crearCorreoInterno(usuario) {
   return `${usuario.toLowerCase().trim()}@reto-cafetero.com`;
@@ -83,9 +143,9 @@ async function recuperarParticipante() {
   await cargarSemanas();
 }
 
-// --------------------------------------------
+// ============================================
 // INICIO
-// --------------------------------------------
+// ============================================
 
 $("btn-comenzar").addEventListener("click", () => {
   mostrar("pantalla-login");
@@ -99,9 +159,9 @@ $("btn-ir-login").addEventListener("click", () => {
   mostrar("pantalla-login");
 });
 
-// --------------------------------------------
+// ============================================
 // CREAR CUENTA
-// --------------------------------------------
+// ============================================
 
 $("form-registro").addEventListener("submit", async e => {
   e.preventDefault();
@@ -149,34 +209,43 @@ $("form-registro").addEventListener("submit", async e => {
       );
     }
 
-    const { data: idParticipante, error: errorRegistro } =
-      await db.rpc("register_participant", {
-        p_username: usuario,
-        p_display_name: nombre
-      });
+    const {
+      data: idParticipante,
+      error: errorRegistro
+    } = await db.rpc("register_participant", {
+      p_username: usuario,
+      p_display_name: nombre
+    });
 
     if (errorRegistro) throw errorRegistro;
 
     participanteId = idParticipante;
 
-    mensaje("¡Tu cuenta fue creada correctamente! Bienvenido al RETO CAFETERO.");
+    mensaje(
+      "¡Tu cuenta fue creada correctamente! Bienvenido al RETO CAFETERO."
+    );
 
     formulario.reset();
+
     await cargarSemanas();
 
   } catch (error) {
     console.error("Error al crear cuenta:", error);
 
+    const detalle = error.message?.toLowerCase() || "";
+
     if (
-      error.message?.toLowerCase().includes("already registered") ||
-      error.message?.toLowerCase().includes("already been registered")
+      detalle.includes("already registered") ||
+      detalle.includes("already been registered")
     ) {
       mensaje("Ese nombre de usuario ya está registrado. Elige otro.");
+
     } else if (
-      error.message?.toLowerCase().includes("duplicate key") ||
-      error.message?.toLowerCase().includes("unique constraint")
+      detalle.includes("duplicate key") ||
+      detalle.includes("unique constraint")
     ) {
       mensaje("Ese nombre de usuario ya existe. Elige otro.");
+
     } else {
       mensaje("No se pudo crear la cuenta: " + error.message);
     }
@@ -186,9 +255,9 @@ $("form-registro").addEventListener("submit", async e => {
   }
 });
 
-// --------------------------------------------
+// ============================================
 // INICIAR SESIÓN
-// --------------------------------------------
+// ============================================
 
 $("form-login").addEventListener("submit", async e => {
   e.preventDefault();
@@ -233,9 +302,9 @@ $("form-login").addEventListener("submit", async e => {
   }
 });
 
-// --------------------------------------------
+// ============================================
 // RECUPERAR SESIÓN AL VOLVER A LA APLICACIÓN
-// --------------------------------------------
+// ============================================
 
 async function comprobarSesion() {
   try {
@@ -257,9 +326,9 @@ async function comprobarSesion() {
 
 comprobarSesion();
 
-// --------------------------------------------
+// ============================================
 // CERRAR SESIÓN
-// --------------------------------------------
+// ============================================
 
 $("btn-cerrar-sesion").addEventListener("click", async () => {
   const confirmar = confirm("¿Quieres cerrar tu sesión?");
@@ -267,6 +336,7 @@ $("btn-cerrar-sesion").addEventListener("click", async () => {
   if (!confirmar) return;
 
   clearInterval(temporizador);
+  temporizador = null;
 
   const { error } = await db.auth.signOut();
 
@@ -278,13 +348,16 @@ $("btn-cerrar-sesion").addEventListener("click", async () => {
   participanteId = null;
   intentoId = null;
   dinamicaActual = null;
+  preguntas = [];
+  preguntaActual = 0;
+  puntosTotales = 0;
 
   mostrar("pantalla-inicio");
 });
 
-// --------------------------------------------
+// ============================================
 // CARGAR SEMANAS
-// --------------------------------------------
+// ============================================
 
 async function cargarSemanas() {
   try {
@@ -302,6 +375,7 @@ async function cargarSemanas() {
 
     semanasDisponibles.forEach(semana => {
       const boton = document.createElement("button");
+
       boton.className = "btn-principal";
       boton.textContent = semana.title || `Semana ${semana.id}`;
 
@@ -321,15 +395,21 @@ async function cargarSemanas() {
 
   } catch (error) {
     console.error("Error al cargar semanas:", error);
+
     mensaje("No se pudieron cargar las semanas: " + error.message);
   }
 }
 
-// --------------------------------------------
-// CARGAR DINÁMICAS Y DESBLOQUEO SECUENCIAL
-// --------------------------------------------
+// ============================================
+// CARGAR DINÁMICAS
+// HORARIOS + DESBLOQUEO SECUENCIAL
+// ============================================
 
 async function cargarDinamicas(semanaId) {
+  if (cargandoDinamicas) return;
+
+  cargandoDinamicas = true;
+
   try {
     const { data, error } = await db
       .from("dynamics")
@@ -351,10 +431,13 @@ async function cargarDinamicas(semanaId) {
       return;
     }
 
-    // Consultar intentos propios para controlar el desbloqueo.
+    // Consultar los intentos del participante.
     const idsDinamicas = dinamicas.map(d => d.id);
 
-    const { data: intentos, error: errorIntentos } = await db
+    const {
+      data: intentos,
+      error: errorIntentos
+    } = await db
       .from("attempts")
       .select("dynamic_id, status, total_points")
       .eq("participant_id", participanteId)
@@ -376,13 +459,23 @@ async function cargarDinamicas(semanaId) {
 
       const completada = intento?.status === "completed";
       const enCurso = intento?.status === "in_progress";
+
+      const horario = obtenerEstadoHorario(dinamica);
+
       const desbloqueada = anterioresCompletadas;
 
-      const boton = document.createElement("button");
-      boton.className = "btn-principal";
-      boton.disabled = !desbloqueada || completada;
+      const habilitada =
+        desbloqueada &&
+        horario === "abierta" &&
+        !completada;
 
-      const titulo = dinamica.title || `Reto ${dinamica.number}`;
+      const boton = document.createElement("button");
+
+      boton.className = "btn-principal";
+      boton.disabled = !habilitada;
+
+      const titulo =
+        dinamica.title || `Reto ${dinamica.number}`;
 
       if (completada) {
         boton.textContent =
@@ -390,18 +483,32 @@ async function cargarDinamicas(semanaId) {
             intento.total_points || 0
           ).toLocaleString("es-CO")} puntos)`;
 
+      } else if (horario === "sin_programacion") {
+        boton.textContent = `${titulo} · Sin programación`;
+
+      } else if (horario === "pendiente") {
+        boton.textContent =
+          `${titulo} · Disponible desde ${formatearFechaColombia(
+            dinamica.opens_at
+          )}`;
+
+      } else if (horario === "cerrada") {
+        boton.textContent = `${titulo} · Plazo finalizado`;
+
+      } else if (!desbloqueada) {
+        boton.textContent = `${titulo} · Completa el reto anterior`;
+
       } else if (enCurso) {
         boton.textContent = `${titulo} · Continuar`;
 
-      } else if (!desbloqueada) {
-        boton.textContent = `${titulo} · Bloqueado`;
-
       } else {
-        boton.textContent = titulo;
+        boton.textContent = `${titulo} · Disponible`;
       }
 
-      if (desbloqueada && !completada) {
-        boton.addEventListener("click", () => iniciarReto(dinamica));
+      if (habilitada) {
+        boton.addEventListener("click", () => {
+          iniciarReto(dinamica);
+        });
       }
 
       lista.appendChild(boton);
@@ -415,17 +522,44 @@ async function cargarDinamicas(semanaId) {
 
   } catch (error) {
     console.error("Error al cargar dinámicas:", error);
+
     mensaje("No se pudieron cargar los retos: " + error.message);
+
+  } finally {
+    cargandoDinamicas = false;
   }
 }
 
-// --------------------------------------------
+// ============================================
 // INICIAR O RECUPERAR RETO
-// --------------------------------------------
+// ============================================
 
 async function iniciarReto(dinamica) {
   if (!participanteId) {
     return mensaje("Debes iniciar sesión nuevamente.");
+  }
+
+  // Comprobar el horario antes de iniciar o recuperar.
+  const estadoHorario = obtenerEstadoHorario(dinamica);
+
+  if (estadoHorario === "pendiente") {
+    return mensaje(
+      `Este reto estará disponible desde el ${formatearFechaColombia(
+        dinamica.opens_at
+      )}.`
+    );
+  }
+
+  if (estadoHorario === "cerrada") {
+    return mensaje(
+      "El plazo para realizar o recuperar este reto ya terminó."
+    );
+  }
+
+  if (estadoHorario === "sin_programacion") {
+    return mensaje(
+      "Este reto todavía no tiene fechas programadas."
+    );
   }
 
   dinamicaActual = dinamica;
@@ -435,6 +569,9 @@ async function iniciarReto(dinamica) {
     puntosTotales = 0;
     respondiendo = false;
     intentoId = null;
+
+    clearInterval(temporizador);
+    temporizador = null;
 
     // Cargar preguntas de la dinámica.
     const { data, error } = await db
@@ -452,7 +589,10 @@ async function iniciarReto(dinamica) {
     preguntas = data;
 
     // Buscar si ya existe un intento.
-    const { data: existente, error: errorConsulta } = await db
+    const {
+      data: existente,
+      error: errorConsulta
+    } = await db
       .from("attempts")
       .select("id, status, total_points")
       .eq("participant_id", participanteId)
@@ -474,7 +614,10 @@ async function iniciarReto(dinamica) {
     if (existente && existente.status === "in_progress") {
       intentoId = existente.id;
 
-      const { data: progreso, error: errorProgreso } = await db.rpc(
+      const {
+        data: progreso,
+        error: errorProgreso
+      } = await db.rpc(
         "get_attempt_progress",
         { p_attempt_id: intentoId }
       );
@@ -506,11 +649,15 @@ async function iniciarReto(dinamica) {
 
       mostrar("pantalla-juego");
       mostrarPregunta();
+
       return;
     }
 
-    // Crear intento nuevo si no existe uno anterior.
-    const { data: intento, error: errorIntento } = await db
+    // Crear intento nuevo.
+    const {
+      data: intento,
+      error: errorIntento
+    } = await db
       .from("attempts")
       .insert({
         participant_id: participanteId,
@@ -530,13 +677,16 @@ async function iniciarReto(dinamica) {
 
   } catch (error) {
     console.error("Error al iniciar o recuperar reto:", error);
-    mensaje("No se pudo iniciar o recuperar el reto: " + error.message);
+
+    mensaje(
+      "No se pudo iniciar o recuperar el reto: " + error.message
+    );
   }
 }
 
-// --------------------------------------------
+// ============================================
 // MOSTRAR PREGUNTAS
-// --------------------------------------------
+// ============================================
 
 function mostrarPregunta() {
   clearInterval(temporizador);
@@ -577,10 +727,13 @@ function mostrarPregunta() {
     }
   }
 
-  if (!Array.isArray(respuestas)) respuestas = [];
+  if (!Array.isArray(respuestas)) {
+    respuestas = [];
+  }
 
   respuestas.forEach(opcion => {
     const boton = document.createElement("button");
+
     boton.className = "btn-principal";
     boton.textContent = opcion;
 
@@ -593,6 +746,7 @@ function mostrarPregunta() {
 
   temporizador = setInterval(() => {
     segundos--;
+
     $("cronometro").textContent = segundos;
 
     if (segundos <= 0) {
@@ -601,9 +755,9 @@ function mostrarPregunta() {
   }, 1000);
 }
 
-// --------------------------------------------
+// ============================================
 // REGISTRAR RESPUESTA Y PUNTOS
-// --------------------------------------------
+// ============================================
 
 async function responder(respuesta) {
   if (respondiendo || temporizador === null) return;
@@ -614,34 +768,49 @@ async function responder(respuesta) {
   temporizador = null;
 
   const pregunta = preguntas[preguntaActual];
-  const tiempoMs = Math.min(Date.now() - inicioPregunta, 20000);
+
+  const tiempoMs = Math.min(
+    Date.now() - inicioPregunta,
+    20000
+  );
 
   $("opciones-respuesta")
     .querySelectorAll("button")
-    .forEach(boton => boton.disabled = true);
+    .forEach(boton => {
+      boton.disabled = true;
+    });
 
   try {
-    const { data, error } = await db.rpc("submit_game_answer", {
-      p_attempt_id: intentoId,
-      p_question_id: pregunta.id,
-      p_answer: respuesta === null ? "" : String(respuesta),
-      p_response_time_ms: tiempoMs
-    });
+    const { data, error } = await db.rpc(
+      "submit_game_answer",
+      {
+        p_attempt_id: intentoId,
+        p_question_id: pregunta.id,
+        p_answer: respuesta === null ? "" : String(respuesta),
+        p_response_time_ms: tiempoMs
+      }
+    );
 
     if (error) throw error;
 
     const resultado = data || {};
-    const puntosGanados = Number(resultado.points_awarded || 0);
 
-    puntosTotales = Number(
-      resultado.total_points ?? (puntosTotales + puntosGanados)
+    const puntosGanados = Number(
+      resultado.points_awarded || 0
     );
 
-    $("puntos").textContent = `${puntosTotales} puntos`;
+    puntosTotales = Number(
+      resultado.total_points ??
+      (puntosTotales + puntosGanados)
+    );
 
-    $("mensaje-respuesta").textContent = resultado.is_correct
-      ? `¡Correcto! +${puntosGanados} puntos`
-      : "Respuesta incorrecta.";
+    $("puntos").textContent =
+      `${puntosTotales} puntos`;
+
+    $("mensaje-respuesta").textContent =
+      resultado.is_correct
+        ? `¡Correcto! +${puntosGanados} puntos`
+        : "Respuesta incorrecta.";
 
     preguntaActual++;
 
@@ -649,25 +818,37 @@ async function responder(respuesta) {
 
   } catch (error) {
     console.error("Error al guardar respuesta:", error);
-    mensaje("No se pudo registrar tu respuesta: " + error.message);
 
+    mensaje(
+      "No se pudo registrar tu respuesta: " + error.message
+    );
+
+    // Se vuelve a mostrar la pregunta si el servidor
+    // no pudo guardar la respuesta.
     respondiendo = false;
     mostrarPregunta();
   }
 }
 
-// --------------------------------------------
+// ============================================
 // FINALIZAR RETO
-// --------------------------------------------
+// ============================================
 
 async function finalizarReto() {
   clearInterval(temporizador);
   temporizador = null;
 
+  if (!intentoId) {
+    return mensaje("No se encontró el intento que deseas finalizar.");
+  }
+
   try {
-    const { data, error } = await db.rpc("finish_game_attempt", {
-      p_attempt_id: intentoId
-    });
+    const { data, error } = await db.rpc(
+      "finish_game_attempt",
+      {
+        p_attempt_id: intentoId
+      }
+    );
 
     if (error) throw error;
 
@@ -677,7 +858,9 @@ async function finalizarReto() {
       );
     }
 
-    puntosTotales = Number(data?.total_points ?? puntosTotales);
+    puntosTotales = Number(
+      data?.total_points ?? puntosTotales
+    );
 
     $("puntuacion-final").textContent = puntosTotales;
 
@@ -690,13 +873,16 @@ async function finalizarReto() {
 
   } catch (error) {
     console.error("Error al finalizar:", error);
-    mensaje("No se pudieron guardar los resultados: " + error.message);
+
+    mensaje(
+      "No se pudieron guardar los resultados: " + error.message
+    );
   }
 }
 
-// --------------------------------------------
-// CONTINUAR
-// --------------------------------------------
+// ============================================
+// CONTINUAR DESPUÉS DE LOS RESULTADOS
+// ============================================
 
 $("btn-continuar").addEventListener("click", () => {
   if (dinamicaActual) {
@@ -704,36 +890,47 @@ $("btn-continuar").addEventListener("click", () => {
   }
 });
 
-// --------------------------------------------
+// ============================================
 // CLASIFICACIÓN
-// --------------------------------------------
+// ============================================
 
 function llenarSelectorSemanasRanking() {
   const selector = $("selector-semana-ranking");
+
   if (!selector) return;
 
   const valorAnterior = selector.value;
+
   selector.innerHTML = "";
 
   semanasDisponibles.forEach(semana => {
     const opcion = document.createElement("option");
+
     opcion.value = semana.id;
-    opcion.textContent = semana.title || `Semana ${semana.id}`;
+    opcion.textContent =
+      semana.title || `Semana ${semana.id}`;
+
     selector.appendChild(opcion);
   });
 
   if (
     valorAnterior &&
-    semanasDisponibles.some(s => String(s.id) === valorAnterior)
+    semanasDisponibles.some(
+      s => String(s.id) === valorAnterior
+    )
   ) {
     selector.value = valorAnterior;
   }
 }
 
 function abrirClasificacion(origen) {
-  pantallaAnteriorClasificacion = origen || "pantalla-semanas";
+  pantallaAnteriorClasificacion =
+    origen || "pantalla-semanas";
+
   llenarSelectorSemanasRanking();
+
   mostrar("pantalla-clasificacion");
+
   cargarClasificacion();
 }
 
@@ -746,13 +943,15 @@ async function cargarClasificacion() {
 
 function agregarCelda(fila, contenido) {
   const celda = document.createElement("td");
+
   celda.textContent = contenido;
+
   fila.appendChild(celda);
 }
 
-// --------------------------------------------
+// ============================================
 // RANKING SEMANAL
-// --------------------------------------------
+// ============================================
 
 async function cargarRankingSemanal() {
   const cuerpo = $("ranking-semanal");
@@ -767,14 +966,19 @@ async function cargarRankingSemanal() {
     if (!selector.value) {
       cuerpo.innerHTML =
         '<tr><td colspan="3">Selecciona una semana.</td></tr>';
+
       return;
     }
 
     const { data, error } = await db
       .from("leaderboard")
-      .select("participant_id, display_name, weekly_points")
+      .select(
+        "participant_id, display_name, weekly_points"
+      )
       .eq("week_id", selector.value)
-      .order("weekly_points", { ascending: false });
+      .order("weekly_points", {
+        ascending: false
+      });
 
     if (error) throw error;
 
@@ -783,6 +987,7 @@ async function cargarRankingSemanal() {
     if (!data || !data.length) {
       cuerpo.innerHTML =
         '<tr><td colspan="3">Aún no hay participantes con puntos en esta semana.</td></tr>';
+
       return;
     }
 
@@ -790,11 +995,17 @@ async function cargarRankingSemanal() {
       const fila = document.createElement("tr");
 
       agregarCelda(fila, i + 1);
-      agregarCelda(fila, persona.display_name || "Participante");
 
       agregarCelda(
         fila,
-        Number(persona.weekly_points || 0).toLocaleString("es-CO")
+        persona.display_name || "Participante"
+      );
+
+      agregarCelda(
+        fila,
+        Number(
+          persona.weekly_points || 0
+        ).toLocaleString("es-CO")
       );
 
       cuerpo.appendChild(fila);
@@ -808,12 +1019,13 @@ async function cargarRankingSemanal() {
   }
 }
 
-// --------------------------------------------
+// ============================================
 // RANKING ACUMULADO
-// --------------------------------------------
+// ============================================
 
 async function cargarRankingAcumulado() {
   const cuerpo = $("ranking-acumulado");
+
   if (!cuerpo) return;
 
   cuerpo.innerHTML =
@@ -822,26 +1034,37 @@ async function cargarRankingAcumulado() {
   try {
     const { data, error } = await db
       .from("leaderboard")
-      .select("participant_id, display_name, cumulative_points")
-      .order("cumulative_points", { ascending: false });
+      .select(
+        "participant_id, display_name, cumulative_points"
+      )
+      .order("cumulative_points", {
+        ascending: false
+      });
 
     if (error) throw error;
 
     const unicos = new Map();
 
     (data || []).forEach(persona => {
-      const anterior = unicos.get(persona.participant_id);
+      const anterior = unicos.get(
+        persona.participant_id
+      );
 
       if (
         !anterior ||
         Number(persona.cumulative_points || 0) >
         Number(anterior.cumulative_points || 0)
       ) {
-        unicos.set(persona.participant_id, persona);
+        unicos.set(
+          persona.participant_id,
+          persona
+        );
       }
     });
 
-    const ordenados = Array.from(unicos.values()).sort(
+    const ordenados = Array.from(
+      unicos.values()
+    ).sort(
       (a, b) =>
         Number(b.cumulative_points || 0) -
         Number(a.cumulative_points || 0)
@@ -852,6 +1075,7 @@ async function cargarRankingAcumulado() {
     if (!ordenados.length) {
       cuerpo.innerHTML =
         '<tr><td colspan="3">Aún no hay puntuaciones acumuladas.</td></tr>';
+
       return;
     }
 
@@ -859,11 +1083,17 @@ async function cargarRankingAcumulado() {
       const fila = document.createElement("tr");
 
       agregarCelda(fila, i + 1);
-      agregarCelda(fila, persona.display_name || "Participante");
 
       agregarCelda(
         fila,
-        Number(persona.cumulative_points || 0).toLocaleString("es-CO")
+        persona.display_name || "Participante"
+      );
+
+      agregarCelda(
+        fila,
+        Number(
+          persona.cumulative_points || 0
+        ).toLocaleString("es-CO")
       );
 
       cuerpo.appendChild(fila);
@@ -877,9 +1107,9 @@ async function cargarRankingAcumulado() {
   }
 }
 
-// --------------------------------------------
+// ============================================
 // BOTONES DE CLASIFICACIÓN
-// --------------------------------------------
+// ============================================
 
 $("btn-ver-clasificacion").addEventListener("click", () => {
   abrirClasificacion("pantalla-semanas");
@@ -897,4 +1127,10 @@ $("selector-semana-ranking").addEventListener("change", () => {
   cargarRankingSemanal();
 });
 
-console.log("RETO CAFETERO: sistema de cuentas y clasificación cargado.");
+// ============================================
+// MENSAJE DE INICIO
+// ============================================
+
+console.log(
+  "RETO CAFETERO: sistema de cuentas, horarios, dinámicas y clasificación cargado."
+);
