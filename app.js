@@ -1,3 +1,4 @@
+
 // ============================================
 // RETO CAFETERO
 // Registro, inicio de sesión, juego, horarios y ranking
@@ -142,6 +143,28 @@ async function recuperarParticipante() {
   await cargarSemanas();
 }
 
+// Comprueba el rol administrativo usando la función SQL protegida.
+async function esAdministradorActual() {
+  const { data, error } = await db.rpc("es_administrador");
+
+  if (error) throw error;
+
+  return data === true;
+}
+
+// Dirige al usuario a su pantalla según sus permisos.
+async function dirigirUsuarioSegunRol() {
+  const administrador = await esAdministradorActual();
+
+  if (administrador) {
+    participanteId = null;
+    mostrar("pantalla-admin");
+    return;
+  }
+
+  await recuperarParticipante();
+}
+
 // ============================================
 // INICIO
 // ============================================
@@ -281,7 +304,7 @@ $("form-login").addEventListener("submit", async e => {
 
     if (error) throw error;
 
-    await recuperarParticipante();
+    await dirigirUsuarioSegunRol();
 
     formulario.reset();
 
@@ -312,7 +335,7 @@ async function comprobarSesion() {
     if (error) throw error;
 
     if (data.session) {
-      await recuperarParticipante();
+      await dirigirUsuarioSegunRol();
     } else {
       mostrar("pantalla-inicio");
     }
@@ -329,7 +352,7 @@ comprobarSesion();
 // CERRAR SESIÓN
 // ============================================
 
-$("btn-cerrar-sesion").addEventListener("click", async () => {
+async function cerrarSesionActual() {
   const confirmar = confirm("¿Quieres cerrar tu sesión?");
 
   if (!confirmar) return;
@@ -351,7 +374,76 @@ $("btn-cerrar-sesion").addEventListener("click", async () => {
   preguntaActual = 0;
   puntosTotales = 0;
 
+  $("resultado-restablecimiento").classList.add("oculto");
+  $("clave-temporal-generada").textContent = "";
+  $("usuario-restablecimiento").value = "";
+
   mostrar("pantalla-inicio");
+}
+
+$("btn-cerrar-sesion").addEventListener("click", cerrarSesionActual);
+$("btn-admin-cerrar-sesion").addEventListener("click", cerrarSesionActual);
+
+// ============================================
+// PANEL DE ADMINISTRACIÓN
+// ============================================
+
+$("form-restablecer-clave").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  const formulario = e.target;
+  const usuario = $("usuario-restablecimiento").value.trim().toLowerCase();
+
+  if (!validarUsuario(usuario)) {
+    return mensaje("Escribe un nombre de usuario válido.");
+  }
+
+  establecerCarga(formulario, true, "GENERANDO CLAVE...");
+
+  try {
+    const { data, error } = await db.functions.invoke(
+      "restablecer-clave",
+      { body: { username: usuario } }
+    );
+
+    if (error) throw error;
+
+    if (!data?.success || !data?.temporaryPassword) {
+      throw new Error(
+        data?.error || "No se pudo generar la contraseña temporal."
+      );
+    }
+
+    $("usuario-restablecimiento").value = usuario;
+    $("clave-temporal-generada").textContent = data.temporaryPassword;
+    $("resultado-restablecimiento").classList.remove("oculto");
+
+    $("mensaje-restablecimiento").textContent =
+      `Contraseña temporal creada para ${usuario}. Entrégala al participante de forma privada.`;
+
+  } catch (error) {
+    console.error("Error al restablecer contraseña:", error);
+
+    mensaje(
+      error.message || "No se pudo restablecer la contraseña. Intenta nuevamente."
+    );
+
+  } finally {
+    establecerCarga(formulario, false);
+  }
+});
+
+$("btn-copiar-clave-temporal").addEventListener("click", async () => {
+  const clave = $("clave-temporal-generada").textContent;
+
+  if (!clave) return;
+
+  try {
+    await navigator.clipboard.writeText(clave);
+    mensaje("Contraseña temporal copiada.");
+  } catch {
+    mensaje("No se pudo copiar automáticamente. Selecciona y copia la contraseña.");
+  }
 });
 
 // ============================================
@@ -516,8 +608,6 @@ async function cargarDinamicas(semanaId) {
         boton.textContent = `${titulo} · Disponible`;
       }
 
-      // El botón permanece pulsable para mostrar el motivo
-      // cuando el reto todavía no se puede iniciar.
       boton.disabled = false;
 
       boton.addEventListener("click", () => {
@@ -563,7 +653,6 @@ async function cargarDinamicas(semanaId) {
         anterioresCompletadas && completada;
     });
 
-    // Permite regresar y elegir cualquiera de las cinco semanas.
     agregarBotonVolverSemanas(lista);
     mostrar("pantalla-dinamicas");
 
@@ -586,7 +675,6 @@ async function iniciarReto(dinamica) {
     return mensaje("Debes iniciar sesión nuevamente.");
   }
 
-  // Comprobar el horario antes de iniciar o recuperar.
   const estadoHorario = obtenerEstadoHorario(dinamica);
 
   if (estadoHorario === "pendiente") {
@@ -620,7 +708,6 @@ async function iniciarReto(dinamica) {
     clearInterval(temporizador);
     temporizador = null;
 
-    // Cargar preguntas de la dinámica.
     const { data, error } = await db
       .from("game_questions")
       .select("*")
@@ -635,7 +722,6 @@ async function iniciarReto(dinamica) {
 
     preguntas = data;
 
-    // Buscar si ya existe un intento.
     const {
       data: existente,
       error: errorConsulta
@@ -648,7 +734,6 @@ async function iniciarReto(dinamica) {
 
     if (errorConsulta) throw errorConsulta;
 
-    // Si ya terminó, no crear otro intento.
     if (existente && existente.status === "completed") {
       return mensaje(
         `Ya completaste esta dinámica con ${Number(
@@ -657,7 +742,6 @@ async function iniciarReto(dinamica) {
       );
     }
 
-    // Si está en curso, recuperar el progreso.
     if (existente && existente.status === "in_progress") {
       intentoId = existente.id;
 
@@ -683,7 +767,6 @@ async function iniciarReto(dinamica) {
         pregunta => !respondidas.has(String(pregunta.id))
       );
 
-      // Si no quedan preguntas, finalizar el intento.
       if (preguntaActual === -1) {
         preguntaActual = preguntas.length;
         await finalizarReto();
@@ -700,7 +783,6 @@ async function iniciarReto(dinamica) {
       return;
     }
 
-    // Crear intento nuevo.
     const {
       data: intento,
       error: errorIntento
@@ -871,8 +953,6 @@ async function responder(respuesta) {
       "No se pudo registrar tu respuesta: " + error.message
     );
 
-    // Se vuelve a mostrar la pregunta si el servidor
-    // no pudo guardar la respuesta.
     respondiendo = false;
     mostrarPregunta();
   }
