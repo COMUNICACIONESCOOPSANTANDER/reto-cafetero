@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -71,6 +72,43 @@
 
       <p>¿Aún no tienes cuenta?</p>
       <button id="btn-ir-registro" class="btn-principal">CREAR CUENTA</button>
+    </section>
+
+    <!-- PANEL EXCLUSIVO PARA ADMINISTRADORES -->
+    <section id="pantalla-admin" class="pantalla oculto">
+      <h2>Panel de administración</h2>
+      <p>Restablecimiento de contraseñas de participantes.</p>
+
+      <form id="form-restablecer-clave">
+        <label for="usuario-restablecimiento">Nombre de usuario del participante</label>
+        <input
+          type="text"
+          id="usuario-restablecimiento"
+          placeholder="Escribe el usuario, por ejemplo: mafecita"
+          minlength="3"
+          maxlength="24"
+          autocomplete="off"
+          required
+        >
+        <small>Se generará una contraseña temporal para esa cuenta.</small>
+        <button type="submit" class="btn-principal">RESTABLECER CONTRASEÑA</button>
+      </form>
+
+      <div id="resultado-restablecimiento" class="bloque-clasificacion oculto" aria-live="polite">
+        <h3>Contraseña temporal generada</h3>
+        <p id="mensaje-restablecimiento"></p>
+        <p>
+          <strong id="clave-temporal-generada" style="font-size: 1.2rem; overflow-wrap: anywhere;"></strong>
+        </p>
+        <button type="button" id="btn-copiar-clave-temporal" class="btn-principal">
+          COPIAR CONTRASEÑA
+        </button>
+        <small>Esta contraseña se muestra una sola vez. Entrégala al participante de forma privada.</small>
+      </div>
+
+      <button id="btn-admin-cerrar-sesion" type="button" class="btn-principal">
+        CERRAR SESIÓN
+      </button>
     </section>
 
     <section id="pantalla-semanas" class="pantalla oculto">
